@@ -3,6 +3,7 @@
 
 typedef struct {
   short desired;
+  short actual;
   /* Rate of increase towards max power in PWM steps per 20 milliseconds.  Default is 15. */
   short slewUp;
   /* Rate of decrease towards off in PWM steps per 20 milliseconds.  Default is 255. */
@@ -17,6 +18,7 @@ void smartMotorInit() {
   for (unsigned char channel = 1; channel <= 10; channel++) {
     SMART_MOTOR* m = &smartMotorState[channel - 1];
     m->desired = 0;
+    m->actual = 0;
     m->slewUp = 15;
     m->slewDown = 255;
     m->scale = 1;
@@ -26,7 +28,7 @@ void smartMotorInit() {
 void smartMotorUpdate() {
   for (unsigned char channel = 1; channel <= 10; channel++) {
     SMART_MOTOR* m = &smartMotorState[channel - 1];
-    short actual = motorGet(channel);
+    short actual = m->actual;
     short desired = m->desired;
     if (actual == desired) {
       continue;
@@ -36,7 +38,7 @@ void smartMotorUpdate() {
       desired = 0;
     }
     // At this point, 'actual' and 'desired' have the same sign (or are 0)
-    short direction = (desired >= 0) ? 1 : -1;
+    short direction = (desired < 0 || actual < 0) ? -1 : 1;
     actual = abs(actual);
     desired = abs(desired);
     // And now 'actual' and 'desired' are both non-negative
@@ -44,6 +46,9 @@ void smartMotorUpdate() {
     if (actual < desired) {
       // Go faster...
       speed = actual + m->slewUp;
+      if (speed > 0 && speed < 10) {
+        speed = 10;  // skip through the deadband
+      }
       if (speed > desired) {
         speed = desired;
       }
@@ -54,7 +59,9 @@ void smartMotorUpdate() {
         speed = desired;
       }
     }
-    motorSet(channel, speed * direction);
+    // Deadband from zero to 10
+    m->actual = speed * direction;
+    motorSet(channel, speed >= 10 ? m->actual : 0);
   }
 }
 
@@ -71,9 +78,14 @@ void smartMotorReversed(unsigned char channel, bool reversed) {
   m->scale = reversed ? -1 : 1;
 }
 
+short smartMotorGet(unsigned char channel) {
+  if (channel <= 0 || channel > 10) return 0;
+  SMART_MOTOR* m = &smartMotorState[channel - 1];
+  return m->desired * m->scale;
+}
+
 void smartMotorSet(unsigned char channel, short speed) {
   if (channel <= 0 || channel > 10) return;
   SMART_MOTOR* m = &smartMotorState[channel - 1];
-  // deadband up to 10
-  m->desired = (abs(speed) >= 10 ? speed : 0) * m->scale;
+  m->desired = speed * m->scale;
 }

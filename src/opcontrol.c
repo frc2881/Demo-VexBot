@@ -41,7 +41,7 @@ void debugPrintState();
 static short s_controlMode = 0;
 
 static short s_debugCounter = 0;
-static short s_debugLength = 10;
+static short s_debugInterval = 25;
 
 /*
  * Runs the user operator control code. This function will be started in its own task with the
@@ -68,17 +68,17 @@ void operatorControl() {
   smartMotorInit();
   smartMotorReversed(MOTOR_RIGHT, true);
   smartMotorReversed(MOTOR_ARM, true);
-  smartMotorSlew(MOTOR_ARM, 2, 10);
-  smartMotorSlew(MOTOR_CLAW, 10, 255);
+  smartMotorSlew(MOTOR_ARM, 2, 10);  // Slow down the arm a lot since otherwise it's very jerky
+  smartMotorSlew(MOTOR_CLAW, 2, 255);  // Slow down the claw
 
   while (1) {
-		inputUpdate();
-		INPUT_CONTROLLER* master = inputController(1);
+    inputUpdate();
+    INPUT_CONTROLLER* master = inputController(1);
 
     chooseControlMode();
 
     if (s_controlMode == CONTROL_TANK) {
-			tankDrive(master->left.vert, master->right.vert);
+      tankDrive(master->left.vert, master->right.vert);
     } else if (s_controlMode == CONTROL_ARCADE) {
       arcadeDrive(master->right.vert, master->right.horz);
     } else {
@@ -86,10 +86,10 @@ void operatorControl() {
     }
 
     mechArm(master->rightButtons2.up.state, master->rightButtons2.down.state);
-		mechClaw(master->leftButtons2.up.state, master->leftButtons2.down.state);
+    mechClaw(master->leftButtons2.up.state, master->leftButtons2.down.state);
 
     smartMotorUpdate();
-		debugUpdate();
+    debugUpdate();
     delay(20);
   }
 }
@@ -117,30 +117,30 @@ void mechClaw(bool open, bool close) {
 
 void chooseControlMode() {
   // button '8 down' cycles through control modes on button up
-	if (inputController(1)->rightButtons4.down.change == -1) {
-		s_controlMode = (s_controlMode + 1) % 3;
-	}
+  if (inputController(1)->rightButtons4.down.change == -1) {
+    s_controlMode = (s_controlMode + 1) % 3;
+  }
 }
 
 void debugUpdate() {
-	INPUT_CONTROLLER* master = inputController(1);
-  if (master->leftButtons4.up.change == -1 && s_debugLength > 2) {
-		s_debugLength--;
-	}
-	if (master->leftButtons4.down.change == -1) {
-		s_debugLength++;
-	}
-  if (++s_debugCounter >= 25 && master->leftButtons4.left.state) {
-		debugPrintState();
-		s_debugCounter = 0;
-	}
+  INPUT_CONTROLLER* master = inputController(1);
+  if (master->leftButtons4.up.change == -1 && s_debugInterval > 1) {
+    s_debugInterval--;
+  }
+  if (master->leftButtons4.down.change == -1) {
+    s_debugInterval++;
+  }
+  if (++s_debugCounter >= s_debugInterval && master->leftButtons4.left.state) {
+    debugPrintState();
+    s_debugCounter = 0;
+  }
 }
 
 void debugPrintState() {
-	// Try to figure out the size of the uart buffer
-	char buf[16];
-	snprintf(buf, 16, "D%%0%dd\n", s_debugLength);
-	printf(buf, s_debugLength);
+  INPUT_CONTROLLER* master = inputController(1);
+
+  // printf("debug: %d  clock: %x\n", s_debugInterval, (int) millis());
+  // printf("turn-cc: %d\n", master->right.horz);
 
   // int battery = powerLevelMain();
 
