@@ -42,9 +42,9 @@ typedef struct {
   INPUT_GROUP_4 rightButtons4;
 } INPUT_CONTROLLER;
 
-void InputInit();
-void InputUpdate();
+void inputInit();
+void inputUpdate();
 
-INPUT_CONTROLLER* Input(unsigned char controller);
+INPUT_CONTROLLER* inputController(unsigned char controller);
 
 #endif

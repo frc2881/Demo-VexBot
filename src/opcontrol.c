@@ -30,15 +30,18 @@
 #define CONTROL_ARCADE 1
 #define CONTROL_GRYO 2
 
-void chooseControlState();
+void chooseControlMode();
 void arcadeDrive(int power, int turnCC);
 void tankDrive(int left, int right);
 void mechArm(bool up, bool down);
 void mechClaw(bool open, bool close);
-void debugState();
+void debugUpdate();
+void debugPrintState();
 
 static short s_controlMode = 0;
-static bool s_lastControlButton = 0;
+
+static short s_debugCounter = 0;
+static short s_debugLength = 10;
 
 /*
  * Runs the user operator control code. This function will be started in its own task with the
@@ -58,41 +61,35 @@ static bool s_lastControlButton = 0;
  * This task should never exit; it should end with some kind of infinite loop, even if empty.
  */
 void operatorControl() {
-  int counter = 0;
-
 //  taskCreate(logControls, TASK_DEFAULT_STACK_SIZE*2, 0, TASK_PRIORITY_LOWEST);
 
-  InputInit();
+  inputInit();
 
-  SmartMotorInit();
-  SmartMotorReversed(MOTOR_RIGHT, true);
-  SmartMotorReversed(MOTOR_ARM, true);
-  SmartMotorSlew(MOTOR_ARM, 2, 10);
-  SmartMotorSlew(MOTOR_CLAW, 10, 255);
+  smartMotorInit();
+  smartMotorReversed(MOTOR_RIGHT, true);
+  smartMotorReversed(MOTOR_ARM, true);
+  smartMotorSlew(MOTOR_ARM, 2, 10);
+  smartMotorSlew(MOTOR_CLAW, 10, 255);
 
   while (1) {
-		InputUpdate();
+		inputUpdate();
+		INPUT_CONTROLLER* master = inputController(1);
 
-    chooseControlState();
+    chooseControlMode();
 
     if (s_controlMode == CONTROL_TANK) {
-      tankDrive(joystickGetAnalog(JOYSTICK_MASTER, 3), joystickGetAnalog(JOYSTICK_MASTER, 2));
+			tankDrive(master->left.vert, master->right.vert);
     } else if (s_controlMode == CONTROL_ARCADE) {
-      arcadeDrive(joystickGetAnalog(JOYSTICK_MASTER, 2), joystickGetAnalog(JOYSTICK_MASTER, 1));
+      arcadeDrive(master->right.vert, master->right.horz);
     } else {
-      arcadeDrive(-joystickGetAnalog(JOYSTICK_MASTER, ACCEL_X), joystickGetAnalog(JOYSTICK_MASTER, ACCEL_Y));
+      arcadeDrive(master->accel.vert, master->accel.horz);
     }
 
-    mechArm(joystickGetDigital(JOYSTICK_MASTER, 6, JOY_UP), joystickGetDigital(JOYSTICK_MASTER, 6, JOY_DOWN));
-    mechClaw(joystickGetDigital(JOYSTICK_MASTER, 5, JOY_UP), joystickGetDigital(JOYSTICK_MASTER, 5, JOY_DOWN));
+    mechArm(master->rightButtons2.up.state, master->rightButtons2.down.state);
+		mechClaw(master->leftButtons2.up.state, master->leftButtons2.down.state);
 
-    SmartMotorUpdate();
-
-    if (++counter == 20) {
-      debugState();
-      counter = 0;
-    }
-
+    smartMotorUpdate();
+		debugUpdate();
     delay(20);
   }
 }
@@ -101,35 +98,50 @@ void operatorControl() {
  * Drives the chassis.  A positive 'turnCC' argument turns clockwise.
  */
 void arcadeDrive(int power, int turnCC) {
-  SmartMotorSet(MOTOR_LEFT, power + turnCC);  // set left wheels
-  SmartMotorSet(MOTOR_RIGHT, power - turnCC);  // set right wheels
+  smartMotorSet(MOTOR_LEFT, power + turnCC);  // set left wheels
+  smartMotorSet(MOTOR_RIGHT, power - turnCC);  // set right wheels
 }
 
 void tankDrive(int left, int right) {
-  SmartMotorSet(MOTOR_LEFT, left);  // set left wheels
-  SmartMotorSet(MOTOR_RIGHT, right);  // set right wheels
+  smartMotorSet(MOTOR_LEFT, left);  // set left wheels
+  smartMotorSet(MOTOR_RIGHT, right);  // set right wheels
 }
 
 void mechArm(bool up, bool down) {
-  SmartMotorSet(MOTOR_ARM, up * 127 - down * 127);
+  smartMotorSet(MOTOR_ARM, up * 127 - down * 127);
 }
 
 void mechClaw(bool open, bool close) {
-  SmartMotorSet(MOTOR_CLAW, open * 127 - close * 127);
+  smartMotorSet(MOTOR_CLAW, open * 127 - close * 127);
 }
 
-void chooseControlState() {
-  // button '8 down' cycles through control modes
-  bool controlButton = joystickGetDigital(JOYSTICK_MASTER, 8, JOY_DOWN);
-  if (s_lastControlButton != controlButton) {
-    if (s_lastControlButton && !controlButton) {
-      s_controlMode = (s_controlMode + 1) % 3;
-    }
-    s_lastControlButton = controlButton;
-  }
+void chooseControlMode() {
+  // button '8 down' cycles through control modes on button up
+	if (inputController(1)->rightButtons4.down.change == -1) {
+		s_controlMode = (s_controlMode + 1) % 3;
+	}
 }
 
-void debugState() {
+void debugUpdate() {
+	INPUT_CONTROLLER* master = inputController(1);
+  if (master->leftButtons4.up.change == -1 && s_debugLength > 2) {
+		s_debugLength--;
+	}
+	if (master->leftButtons4.down.change == -1) {
+		s_debugLength++;
+	}
+  if (++s_debugCounter >= 25 && master->leftButtons4.left.state) {
+		debugPrintState();
+		s_debugCounter = 0;
+	}
+}
+
+void debugPrintState() {
+	// Try to figure out the size of the uart buffer
+	char buf[16];
+	snprintf(buf, 16, "D%%0%dd\n", s_debugLength);
+	printf(buf, s_debugLength);
+
   // int battery = powerLevelMain();
 
   // Look at the Joystick.  Each control is numbered on the Joystick itself.

@@ -1,11 +1,11 @@
 #ifndef motor_h
 #define motor_h
 
-void SmartMotorInit();
-void SmartMotorUpdate();
+void smartMotorInit();
+void smartMotorUpdate();
 
-void SmartMotorSet(unsigned char channel, short speed);
-void SmartMotorSlew(unsigned char channel, short up, short down);
-void SmartMotorReversed(unsigned char channel, bool reversed);
+void smartMotorSet(unsigned char channel, short speed);
+void smartMotorSlew(unsigned char channel, short up, short down);
+void smartMotorReversed(unsigned char channel, bool reversed);
 
 #endif
