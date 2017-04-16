@@ -10,7 +10,10 @@
  * obtained from http://sourceforge.net/projects/freertos/files/ or on request.
  */
 
+#include <API.h>
+#include "input.h"
 #include "main.h"
+#include "motor.h"
 
 /* The first joystick (usually the only joystick). */
 #define JOYSTICK_MASTER 1
@@ -55,102 +58,114 @@ static bool s_lastControlButton = 0;
  * This task should never exit; it should end with some kind of infinite loop, even if empty.
  */
 void operatorControl() {
-	int counter = 0;
+  int counter = 0;
 
 //  taskCreate(logControls, TASK_DEFAULT_STACK_SIZE*2, 0, TASK_PRIORITY_LOWEST);
 
-	while (1) {
+  InputInit();
+
+  SmartMotorInit();
+  SmartMotorReversed(MOTOR_RIGHT, true);
+  SmartMotorReversed(MOTOR_ARM, true);
+  SmartMotorSlew(MOTOR_ARM, 2, 10);
+  SmartMotorSlew(MOTOR_CLAW, 10, 255);
+
+  while (1) {
+		InputUpdate();
+
     chooseControlState();
 
-		if (s_controlMode == CONTROL_TANK) {
-			tankDrive(joystickGetAnalog(JOYSTICK_MASTER, 3), joystickGetAnalog(JOYSTICK_MASTER, 2));
-		} else if (s_controlMode == CONTROL_ARCADE) {
-			arcadeDrive(joystickGetAnalog(JOYSTICK_MASTER, 2), joystickGetAnalog(JOYSTICK_MASTER, 1));
-		} else {
-			arcadeDrive(-joystickGetAnalog(JOYSTICK_MASTER, ACCEL_X), joystickGetAnalog(JOYSTICK_MASTER, ACCEL_Y));
-		}
+    if (s_controlMode == CONTROL_TANK) {
+      tankDrive(joystickGetAnalog(JOYSTICK_MASTER, 3), joystickGetAnalog(JOYSTICK_MASTER, 2));
+    } else if (s_controlMode == CONTROL_ARCADE) {
+      arcadeDrive(joystickGetAnalog(JOYSTICK_MASTER, 2), joystickGetAnalog(JOYSTICK_MASTER, 1));
+    } else {
+      arcadeDrive(-joystickGetAnalog(JOYSTICK_MASTER, ACCEL_X), joystickGetAnalog(JOYSTICK_MASTER, ACCEL_Y));
+    }
 
     mechArm(joystickGetDigital(JOYSTICK_MASTER, 6, JOY_UP), joystickGetDigital(JOYSTICK_MASTER, 6, JOY_DOWN));
-		mechClaw(joystickGetDigital(JOYSTICK_MASTER, 5, JOY_UP), joystickGetDigital(JOYSTICK_MASTER, 5, JOY_DOWN));
+    mechClaw(joystickGetDigital(JOYSTICK_MASTER, 5, JOY_UP), joystickGetDigital(JOYSTICK_MASTER, 5, JOY_DOWN));
 
-		if (++counter == 20) {
-			debugState();
-			counter = 0;
-		}
+    SmartMotorUpdate();
 
-		delay(20);
-	}
+    if (++counter == 20) {
+      debugState();
+      counter = 0;
+    }
+
+    delay(20);
+  }
 }
 
 /*
  * Drives the chassis.  A positive 'turnCC' argument turns clockwise.
  */
 void arcadeDrive(int power, int turnCC) {
-	motorSet(MOTOR_LEFT, power + turnCC);  // set left wheels
-	motorSet(MOTOR_RIGHT, -(power - turnCC));  // set right wheels (reversed)
+  SmartMotorSet(MOTOR_LEFT, power + turnCC);  // set left wheels
+  SmartMotorSet(MOTOR_RIGHT, power - turnCC);  // set right wheels
 }
 
 void tankDrive(int left, int right) {
-	motorSet(MOTOR_LEFT, left);  // set left wheels
-	motorSet(MOTOR_RIGHT, -right);  // set right wheels (reversed)
+  SmartMotorSet(MOTOR_LEFT, left);  // set left wheels
+  SmartMotorSet(MOTOR_RIGHT, right);  // set right wheels
 }
 
 void mechArm(bool up, bool down) {
-	motorSet(MOTOR_ARM, -(up * 127 - down * 127));
+  SmartMotorSet(MOTOR_ARM, up * 127 - down * 127);
 }
 
 void mechClaw(bool open, bool close) {
-	motorSet(MOTOR_CLAW, open * 127 - close * 127);
+  SmartMotorSet(MOTOR_CLAW, open * 127 - close * 127);
 }
 
 void chooseControlState() {
-	// button '8 down' cycles through control modes
+  // button '8 down' cycles through control modes
   bool controlButton = joystickGetDigital(JOYSTICK_MASTER, 8, JOY_DOWN);
-	if (s_lastControlButton != controlButton) {
-		if (s_lastControlButton && !controlButton) {
-			s_controlMode = (s_controlMode + 1) % 3;
-		}
-		s_lastControlButton = controlButton;
-	}
+  if (s_lastControlButton != controlButton) {
+    if (s_lastControlButton && !controlButton) {
+      s_controlMode = (s_controlMode + 1) % 3;
+    }
+    s_lastControlButton = controlButton;
+  }
 }
 
 void debugState() {
-	int battery = powerLevelMain();
+  // int battery = powerLevelMain();
 
-	// Look at the Joystick.  Each control is numbered on the Joystick itself.
-	int joystick = JOYSTICK_MASTER;
-	int rVert = joystickGetAnalog(joystick, 2);
-	int rHorz = joystickGetAnalog(joystick, 1);
+  // Look at the Joystick.  Each control is numbered on the Joystick itself.
+  // int joystick = JOYSTICK_MASTER;
+  // int rVert = joystickGetAnalog(joystick, 2);
+  // int rHorz = joystickGetAnalog(joystick, 1);
 
-	int lVert = joystickGetAnalog(joystick, 3);
-	int lHorz = joystickGetAnalog(joystick, 4);
+  // int lVert = joystickGetAnalog(joystick, 3);
+  // int lHorz = joystickGetAnalog(joystick, 4);
 
-	int accelX = joystickGetAnalog(joystick, ACCEL_X);
-	int accelY = joystickGetAnalog(joystick, ACCEL_Y);
+  // int accelX = joystickGetAnalog(joystick, ACCEL_X);
+  // int accelY = joystickGetAnalog(joystick, ACCEL_Y);
 
-	// int ldDn = joystickGetDigital(joystick, 5, JOY_DOWN);
-	// int ldUp = joystickGetDigital(joystick, 5, JOY_UP);
-	//
-	// int rdDn = joystickGetDigital(joystick, 6, JOY_DOWN);
-	// int rdUp = joystickGetDigital(joystick, 6, JOY_UP);
-	//
-	// int luDn = joystickGetDigital(joystick, 7, JOY_DOWN);
-	// int luUp = joystickGetDigital(joystick, 7, JOY_UP);
-	// int luLt = joystickGetDigital(joystick, 7, JOY_LEFT);
-	// int luRt = joystickGetDigital(joystick, 7, JOY_RIGHT);
-	//
-	// int ruDn = joystickGetDigital(joystick, 8, JOY_DOWN);
-	// int ruUp = joystickGetDigital(joystick, 8, JOY_UP);
-	// int ruLt = joystickGetDigital(joystick, 8, JOY_LEFT);
-	// int ruRt = joystickGetDigital(joystick, 8, JOY_RIGHT);
+  // int ldDn = joystickGetDigital(joystick, 5, JOY_DOWN);
+  // int ldUp = joystickGetDigital(joystick, 5, JOY_UP);
+  //
+  // int rdDn = joystickGetDigital(joystick, 6, JOY_DOWN);
+  // int rdUp = joystickGetDigital(joystick, 6, JOY_UP);
+  //
+  // int luDn = joystickGetDigital(joystick, 7, JOY_DOWN);
+  // int luUp = joystickGetDigital(joystick, 7, JOY_UP);
+  // int luLt = joystickGetDigital(joystick, 7, JOY_LEFT);
+  // int luRt = joystickGetDigital(joystick, 7, JOY_RIGHT);
+  //
+  // int ruDn = joystickGetDigital(joystick, 8, JOY_DOWN);
+  // int ruUp = joystickGetDigital(joystick, 8, JOY_UP);
+  // int ruLt = joystickGetDigital(joystick, 8, JOY_LEFT);
+  // int ruRt = joystickGetDigital(joystick, 8, JOY_RIGHT);
 
-	printf("accel=%d,%d\n", accelX, accelY);
-	return;
+  // printf("accel=%d,%d\n", accelX, accelY);
+  // return;
 
-	printf("battery=%d, joyLeft=%d,%d joyRight=%d,%d, accel=%d,%d\n",
-		battery,
-		lVert, lHorz, rVert, rHorz, accelX, accelY);
-		//	printf("battery=%d, joyLeft=%d,%d joyRight=%d,%d, accel=%d,%d, b5=%d%d b6=%d%d, b7=%d%d%d%d, b8=%d%d%d%d\n",
-		// ldDn, ldUp, rdDn, rdUp,
-		// luDn, luUp, luLt, luRt, ruDn, ruUp, ruLt, ruRt);
+  // printf("battery=%d, joyLeft=%d,%d joyRight=%d,%d, accel=%d,%d\n",
+    // battery,
+    // lVert, lHorz, rVert, rHorz, accelX, accelY);
+    //  printf("battery=%d, joyLeft=%d,%d joyRight=%d,%d, accel=%d,%d, b5=%d%d b6=%d%d, b7=%d%d%d%d, b8=%d%d%d%d\n",
+    // ldDn, ldUp, rdDn, rdUp,
+    // luDn, luUp, luLt, luRt, ruDn, ruUp, ruLt, ruRt);
 }
