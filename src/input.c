@@ -2,11 +2,11 @@
 #include "input.h"
 
 // Just one controller for now
-static INPUT_CONTROLLER inputControllerState[1];
+static INPUT_CONTROLLER s_inputController[1];
 
 void inputInit() {
   for (unsigned char controller = 1; controller <= 1; controller++) {
-    INPUT_CONTROLLER* input = &inputControllerState[controller - 1];
+    INPUT_CONTROLLER* input = &s_inputController[controller - 1];
     input->left.horzScale = input->left.vertScale = 1;
     input->right.horzScale = input->right.vertScale = 1;
     input->accel.horzScale = 1;
@@ -22,10 +22,10 @@ void inputUpdateJoystick(INPUT_JOYSTICK* input, unsigned char joystick,
 
 void inputUpdateButton(INPUT_BUTTON* input, unsigned char joystick,
                        unsigned char buttonGroup, unsigned char button) {
-  bool previous = input->state;
+  bool previous = input->pressed;
   bool current = joystickGetDigital(joystick, buttonGroup, button);
-  input->state = current;
-  input->change = current - previous;
+  input->pressed = current;
+  input->changed = current - previous;
 }
 
 void inputUpdateGroup2(INPUT_GROUP_2* input, unsigned char joystick,
@@ -54,7 +54,7 @@ void inputUpdateController(INPUT_CONTROLLER* input, unsigned char joystick) {
 
 void inputUpdate() {
   for (unsigned char controller = 1; controller <= 1; controller++) {
-    INPUT_CONTROLLER* input = &inputControllerState[controller - 1];
+    INPUT_CONTROLLER* input = &s_inputController[controller - 1];
     inputUpdateController(input, controller);
   }
 }
@@ -63,5 +63,5 @@ INPUT_CONTROLLER* inputController(unsigned char controller) {
   if (controller < 1 || controller > 1) {
     controller = 1;
   }
-  return &inputControllerState[controller - 1];
+  return &s_inputController[controller - 1];
 }

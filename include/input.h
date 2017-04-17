@@ -2,8 +2,8 @@
 #define input_h
 
 typedef struct {
-  bool state;
-  short change;  // 1 immediately after press, -1 after release, 0 otherwise
+  bool pressed;
+  short changed;  // 1 immediately after press, -1 after release, 0 otherwise
 } INPUT_BUTTON;
 
 typedef struct {

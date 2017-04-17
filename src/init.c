@@ -21,6 +21,8 @@
  * configure a UART port (usartOpen()) but cannot set up an LCD (lcdInit()).
  */
 void initializeIO() {
+  // Reset the Cortex if static shock etc. causes the Cortex to lock up.
+  watchdogInit();
 }
 
 /*

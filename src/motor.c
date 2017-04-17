@@ -11,12 +11,14 @@ typedef struct {
   short scale;
 } SMART_MOTOR;
 
-static SMART_MOTOR smartMotorState[10];
+static bool s_smartMotorSlewEnabled;
+static SMART_MOTOR s_smartMotorState[10];
 
 void smartMotorInit() {
   motorStopAll();
+  s_smartMotorSlewEnabled = true;
   for (unsigned char channel = 1; channel <= 10; channel++) {
-    SMART_MOTOR* m = &smartMotorState[channel - 1];
+    SMART_MOTOR* m = &s_smartMotorState[channel - 1];
     m->desired = 0;
     m->actual = 0;
     m->slewUp = 15;
@@ -27,11 +29,16 @@ void smartMotorInit() {
 
 void smartMotorUpdate() {
   for (unsigned char channel = 1; channel <= 10; channel++) {
-    SMART_MOTOR* m = &smartMotorState[channel - 1];
+    SMART_MOTOR* m = &s_smartMotorState[channel - 1];
     short actual = m->actual;
     short desired = m->desired;
     if (actual == desired) {
       continue;
+    }
+    if (!s_smartMotorSlewEnabled) {
+      m->actual = desired;
+      motorSet(channel, desired);
+      return;
     }
     // If reversing direction, decelerate to 0 before accelerating in the opposite direction
     if ((actual < 0 && desired > 0) || (actual > 0 && desired < 0)) {
@@ -65,27 +72,31 @@ void smartMotorUpdate() {
   }
 }
 
+void smartMotorSlewEnabled(bool flag) {
+  s_smartMotorSlewEnabled = flag;
+}
+
 void smartMotorSlew(unsigned char channel, short up, short down) {
   if (channel <= 0 || channel > 10) return;
-  SMART_MOTOR* m = &smartMotorState[channel - 1];
+  SMART_MOTOR* m = &s_smartMotorState[channel - 1];
   m->slewUp = up;
   m->slewDown = down;
 }
 
 void smartMotorReversed(unsigned char channel, bool reversed) {
   if (channel <= 0 || channel > 10) return;
-  SMART_MOTOR* m = &smartMotorState[channel - 1];
+  SMART_MOTOR* m = &s_smartMotorState[channel - 1];
   m->scale = reversed ? -1 : 1;
 }
 
 short smartMotorGet(unsigned char channel) {
   if (channel <= 0 || channel > 10) return 0;
-  SMART_MOTOR* m = &smartMotorState[channel - 1];
+  SMART_MOTOR* m = &s_smartMotorState[channel - 1];
   return m->desired * m->scale;
 }
 
 void smartMotorSet(unsigned char channel, short speed) {
   if (channel <= 0 || channel > 10) return;
-  SMART_MOTOR* m = &smartMotorState[channel - 1];
+  SMART_MOTOR* m = &s_smartMotorState[channel - 1];
   m->desired = speed * m->scale;
 }

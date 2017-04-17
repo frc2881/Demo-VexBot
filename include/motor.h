@@ -3,6 +3,7 @@
 
 void smartMotorInit();
 void smartMotorUpdate();
+void smartMotorSlewEnabled(bool flag);
 
 short smartMotorGet(unsigned char channel);
 void smartMotorSet(unsigned char channel, short speed);

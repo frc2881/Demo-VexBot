@@ -30,15 +30,15 @@
 #define CONTROL_ARCADE 1
 #define CONTROL_GRYO 2
 
-void chooseControlMode();
+int chooseControlMode();
 void arcadeDrive(int power, int turnCC);
 void tankDrive(int left, int right);
 void mechArm(bool up, bool down);
+void mechArmAnalog(int speed);
 void mechClaw(bool open, bool close);
+void mechClawAnalog(int speed);
 void debugUpdate();
 void debugPrintState();
-
-static short s_controlMode = 0;
 
 static short s_debugCounter = 0;
 static short s_debugInterval = 25;
@@ -75,19 +75,27 @@ void operatorControl() {
     inputUpdate();
     INPUT_CONTROLLER* master = inputController(1);
 
-    chooseControlMode();
+		// What chassis control algorithm has the user selected?
+    int controlMode = chooseControlMode();
 
-    if (s_controlMode == CONTROL_TANK) {
-      tankDrive(master->left.vert, master->right.vert);
-    } else if (s_controlMode == CONTROL_ARCADE) {
-      arcadeDrive(master->right.vert, master->right.horz);
-    } else {
-      arcadeDrive(master->accel.vert, master->accel.horz);
-    }
+		if (master->leftButtons4.up.pressed) {
+			// Override, when pressed use joysticks to control mechanisms
+			mechArmAnalog(master->right.vert);
+			mechClawAnalog(master->left.vert);
+		} else {
+			// Normal, use joysticks to control drive train
+	    if (controlMode == CONTROL_TANK) {
+	      tankDrive(master->left.vert, master->right.vert);
+	    } else if (controlMode == CONTROL_ARCADE) {
+	      arcadeDrive(master->right.vert, master->right.horz);
+	    } else {
+	      arcadeDrive(master->accel.vert, master->accel.horz);
+	    }
+	    mechArm(master->rightButtons2.up.pressed, master->rightButtons2.down.pressed);
+	    mechClaw(master->leftButtons2.up.pressed, master->leftButtons2.down.pressed);
+		}
 
-    mechArm(master->rightButtons2.up.state, master->rightButtons2.down.state);
-    mechClaw(master->leftButtons2.up.state, master->leftButtons2.down.state);
-
+		smartMotorSlewEnabled(!master->rightButtons4.up.pressed);
     smartMotorUpdate();
     debugUpdate();
     delay(20);
@@ -111,26 +119,36 @@ void mechArm(bool up, bool down) {
   smartMotorSet(MOTOR_ARM, up * 127 - down * 127);
 }
 
+void mechArmAnalog(int speed) {
+  smartMotorSet(MOTOR_ARM, speed);
+}
+
 void mechClaw(bool open, bool close) {
   smartMotorSet(MOTOR_CLAW, open * 127 - close * 127);
 }
 
-void chooseControlMode() {
+void mechClawAnalog(int speed) {
+	smartMotorSet(MOTOR_CLAW, speed);
+}
+
+int chooseControlMode() {
+	static int s_controlMode = 0;
   // button '8 down' cycles through control modes on button up
-  if (inputController(1)->rightButtons4.down.change == -1) {
+  if (inputController(1)->rightButtons4.down.changed == 1) {
     s_controlMode = (s_controlMode + 1) % 3;
   }
+	return s_controlMode;
 }
 
 void debugUpdate() {
   INPUT_CONTROLLER* master = inputController(1);
-  if (master->leftButtons4.up.change == -1 && s_debugInterval > 1) {
+  if (master->leftButtons4.up.changed == 1 && s_debugInterval > 1) {
     s_debugInterval--;
   }
-  if (master->leftButtons4.down.change == -1) {
+  if (master->leftButtons4.down.changed == 1) {
     s_debugInterval++;
   }
-  if (++s_debugCounter >= s_debugInterval && master->leftButtons4.left.state) {
+  if (++s_debugCounter >= s_debugInterval && master->leftButtons4.left.pressed) {
     debugPrintState();
     s_debugCounter = 0;
   }
