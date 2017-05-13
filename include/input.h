@@ -2,49 +2,62 @@
 #define input_h
 
 typedef struct {
-  bool pressed;
-  short changed;  // 1 immediately after press, -1 after release, 0 otherwise
-} INPUT_BUTTON;
+    bool pressed;
+    short changed;  // 1 immediately after press, -1 after release, 0 otherwise
+} Button;
 
 typedef struct {
-  INPUT_BUTTON up;
-  INPUT_BUTTON down;
-} INPUT_GROUP_2;
+    Button up;
+    Button down;
+} ButtonGroup2;
 
 typedef struct {
-  INPUT_BUTTON up;
-  INPUT_BUTTON down;
-  INPUT_BUTTON left;
-  INPUT_BUTTON right;
-} INPUT_GROUP_4;
+    Button up;
+    Button down;
+    Button left;
+    Button right;
+} ButtonGroup4;
 
 typedef struct {
-  short vert;
-  short horz;
-  short vertScale;
-  short horzScale;
-} INPUT_JOYSTICK;
+    short vert;
+    short horz;
+    short vertScale;
+    short horzScale;
+} Joystick;
 
 typedef struct {
-  // Joystick 3, 4
-  INPUT_JOYSTICK left;
-  // Joystick 2, 1
-  INPUT_JOYSTICK right;
-  // Joystick internal gyro (tilt forward/back, left/right)
-  INPUT_JOYSTICK accel;
-  // Button group 5
-  INPUT_GROUP_2 leftButtons2;
-  // Button group 6
-  INPUT_GROUP_2 rightButtons2;
-  // Button group 7
-  INPUT_GROUP_4 leftButtons4;
-  // Button group 8
-  INPUT_GROUP_4 rightButtons4;
-} INPUT_CONTROLLER;
+    unsigned char port;
+    // Joystick 3, 4
+    Joystick left;
+    // Joystick 2, 1
+    Joystick right;
+    // Joystick internal gyro (tilt forward/back, left/right)
+    Joystick accel;
+    // Button group 5
+    ButtonGroup2 leftButtons2;
+    // Button group 6
+    ButtonGroup2 rightButtons2;
+    // Button group 7
+    ButtonGroup4 leftButtons4;
+    // Button group 8
+    ButtonGroup4 rightButtons4;
+    // Time in millis when a controller value changed (except accelerometer)
+    unsigned long lastChangedTime;
+} Controller;
 
-void inputInit();
+typedef struct {
+    FILE* port;
+    Button left;
+    Button center;
+    Button right;
+    // Time in millis when an lcd button changed
+    unsigned long lastChangedTime;
+} LcdInput;
+
+void inputInit(int numControllers, FILE* lcdPort);
 void inputUpdate();
 
-INPUT_CONTROLLER* inputController(unsigned char controller);
+Controller *inputController(unsigned char controller);
+LcdInput *inputLcd();
 
 #endif

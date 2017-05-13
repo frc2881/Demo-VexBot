@@ -23,6 +23,10 @@
 void initializeIO() {
   // Reset the Cortex if static shock etc. causes the Cortex to lock up.
   watchdogInit();
+
+  // Initialize output pins (pneumatics, etc.)
+//  pinMode(1, OUTPUT);
+//  digitalWrite(1, LOW);
 }
 
 /*
@@ -39,4 +43,7 @@ void initializeIO() {
  * can be implemented in this task if desired.
  */
 void initialize() {
+    lcdInit(uart1);
+    lcdClear(uart1);
+    lcdSetBacklight(uart1, true);
 }
