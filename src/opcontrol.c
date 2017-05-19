@@ -80,10 +80,10 @@ void operatorControl() {
 //  taskCreate(logControls, TASK_DEFAULT_STACK_SIZE*2, 0, TASK_PRIORITY_LOWEST);
 
     // Initialize input from Joystick 1 (and optionally LCD 1 buttons)
-    hidInit(1, NULL);
-//    hidInit(1, uart1);
+    hidInit(1, uart1);
+//    hidInit(1, NULL);
 
-//    LcdInput *lcdInput = hidLcd();
+    LcdInput *lcdInput = hidLcd();
     Controller *joystick = hidController(1);
     joystick->accel.vertScale = -1;  // Tilt down moves forward, tilt up moves back
 
@@ -91,11 +91,11 @@ void operatorControl() {
     smartMotorReversed(MOTOR_RIGHT_F, true);
     smartMotorReversed(MOTOR_RIGHT_R, true);
     smartMotorReversed(MOTOR_ARM, true);
-//    smartMotorSlew(MOTOR_ARM, 0.1, 0.5);  // Slow down the arm a lot since otherwise it's very jerky
-//    smartMotorSlew(MOTOR_CLAW, 0.1, 100);  // Slow down the claw
+    smartMotorSlew(MOTOR_ARM, 0.1, 0.5);  // Slow down the arm a lot since otherwise it's very jerky
+    smartMotorSlew(MOTOR_CLAW, 0.1, 100);  // Slow down the claw
 
-//    Ultrasonic sonarLeft = ultrasonicInit(4, 3);
-//    Ultrasonic sonarRight = ultrasonicInit(2, 1);
+    Ultrasonic sonarLeft = ultrasonicInit(4, 3);
+    Ultrasonic sonarRight = ultrasonicInit(2, 1);
 
     unsigned long previousWakeTime = millis();
     unsigned long sleptAt = millis();
@@ -130,7 +130,7 @@ void operatorControl() {
         smartMotorSlewEnabled(!joystick->rightButtons4.up.pressed);
         smartMotorUpdate();
 
-//        lcdUpdate(lcdInput, joystick, sonarLeft, sonarRight, sleptAt, now);
+        lcdUpdate(lcdInput, joystick, sonarLeft, sonarRight, sleptAt, now);
 
         debugUpdate();
 
