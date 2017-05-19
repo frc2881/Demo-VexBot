@@ -11,7 +11,7 @@
  */
 
 #include <API.h>
-#include <input.h>
+#include "hid.h"
 #include "main.h"
 #include "motor.h"
 
@@ -77,11 +77,9 @@ static char _spinnerChars[] = "-\\|/";
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
 
 void operatorControl() {
-//  taskCreate(logControls, TASK_DEFAULT_STACK_SIZE*2, 0, TASK_PRIORITY_LOWEST);
 
     // Initialize input from Joystick 1 (and optionally LCD 1 buttons)
     hidInit(1, uart1);
-//    hidInit(1, NULL);
 
     LcdInput *lcdInput = hidLcd();
     Controller *joystick = hidController(1);

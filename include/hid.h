@@ -1,9 +1,12 @@
+/** @file hid.c
+ * @brief Human Input Device (HID) helper routines
+ *
+ * Manages a stable snapshot of the current state of the human input devices (the controllers and lcd buttons).
+ * Adds change flags and tracks last changed timestamps for detecting button changes etc.
+ */
+
 #ifndef input_h
 #define input_h
-
-//
-// Human Interface Device (HID) helper routines
-//
 
 typedef struct {
     bool pressed;

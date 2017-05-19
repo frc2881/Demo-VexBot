@@ -11,6 +11,7 @@
  */
 
 #include "main.h"
+#include "pi.h"
 
 /*
  * Runs pre-initialization code. This function will be started in kernel mode one time while the
@@ -46,4 +47,8 @@ void initialize() {
     lcdInit(uart1);
     lcdClear(uart1);
     lcdSetBacklight(uart1, true);
+
+//    imeInitializeAll();
+
+    piInit(uart2);
 }
