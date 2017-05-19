@@ -1,6 +1,10 @@
 #ifndef input_h
 #define input_h
 
+//
+// Human Interface Device (HID) helper routines
+//
+
 typedef struct {
     bool pressed;
     short changed;  // 1 immediately after press, -1 after release, 0 otherwise
@@ -54,10 +58,10 @@ typedef struct {
     unsigned long lastChangedTime;
 } LcdInput;
 
-void inputInit(int numControllers, FILE* lcdPort);
-void inputUpdate();
+void hidInit(int numControllers, FILE *lcdPort);
+void hidUpdate();
 
-Controller *inputController(unsigned char controller);
-LcdInput *inputLcd();
+Controller *hidController(unsigned char controller);
+LcdInput *hidLcd();
 
 #endif

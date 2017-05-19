@@ -79,28 +79,30 @@ static char _spinnerChars[] = "-\\|/";
 void operatorControl() {
 //  taskCreate(logControls, TASK_DEFAULT_STACK_SIZE*2, 0, TASK_PRIORITY_LOWEST);
 
-    inputInit(1, uart1);
+    // Initialize input from Joystick 1 (and optionally LCD 1 buttons)
+    hidInit(1, NULL);
+//    hidInit(1, uart1);
 
-    LcdInput *lcdInput = inputLcd();
-    Controller *joystick = inputController(1);
+//    LcdInput *lcdInput = hidLcd();
+    Controller *joystick = hidController(1);
     joystick->accel.vertScale = -1;  // Tilt down moves forward, tilt up moves back
 
     smartMotorInit();
     smartMotorReversed(MOTOR_RIGHT_F, true);
     smartMotorReversed(MOTOR_RIGHT_R, true);
     smartMotorReversed(MOTOR_ARM, true);
-    smartMotorSlew(MOTOR_ARM, 0.1, 0.5);  // Slow down the arm a lot since otherwise it's very jerky
-    smartMotorSlew(MOTOR_CLAW, 0.1, 100);  // Slow down the claw
+//    smartMotorSlew(MOTOR_ARM, 0.1, 0.5);  // Slow down the arm a lot since otherwise it's very jerky
+//    smartMotorSlew(MOTOR_CLAW, 0.1, 100);  // Slow down the claw
 
-    Ultrasonic sonarLeft = ultrasonicInit(4, 3);
-    Ultrasonic sonarRight = ultrasonicInit(2, 1);
+//    Ultrasonic sonarLeft = ultrasonicInit(4, 3);
+//    Ultrasonic sonarRight = ultrasonicInit(2, 1);
 
     unsigned long previousWakeTime = millis();
     unsigned long sleptAt = millis();
     while (true) {
         unsigned long now = millis();
 
-        inputUpdate();
+        hidUpdate();
 
         // What chassis control algorithm has the user selected?
         int controlMode = chooseControlMode();
@@ -128,7 +130,7 @@ void operatorControl() {
         smartMotorSlewEnabled(!joystick->rightButtons4.up.pressed);
         smartMotorUpdate();
 
-        lcdUpdate(lcdInput, joystick, sonarLeft, sonarRight, sleptAt, now);
+//        lcdUpdate(lcdInput, joystick, sonarLeft, sonarRight, sleptAt, now);
 
         debugUpdate();
 
@@ -176,14 +178,14 @@ void mechClawAnalog(int speed) {
 int chooseControlMode() {
     static int s_controlMode = 0;
     // button '8 down' cycles through control modes on button up
-    if (inputController(1)->rightButtons4.down.changed == 1) {
+    if (hidController(1)->rightButtons4.down.changed == 1) {
         s_controlMode = (s_controlMode + 1) % 3;
     }
     return s_controlMode;
 }
 
 void debugUpdate() {
-    Controller *master = inputController(1);
+    Controller *master = hidController(1);
     if (master->leftButtons4.up.changed == 1 && s_debugInterval > 1) {
         s_debugInterval--;
     }
@@ -197,7 +199,7 @@ void debugUpdate() {
 }
 
 void debugPrintState() {
-    Controller *master = inputController(1);
+    Controller *master = hidController(1);
 
     // printf("debug: %d  clock: %x\n", s_debugInterval, (int) millis());
     // printf("turn-cc: %d\n", master->right.horz);
