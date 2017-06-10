@@ -44,8 +44,7 @@ static void piLoop(void *params) {
         char cmd[15];
         fputs("ready", uart);
         piRead(cmd, sizeof(cmd), uart);
-        printf("received %s\n", cmd);
-        fprintf(uart, "received %s\n", cmd);
+        printf("received %s\n", cmd);  // to debug, not back to the pi uart
 
         // TODO: ultrasonic
         // TODO: motor encoders
