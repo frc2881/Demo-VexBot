@@ -7,14 +7,34 @@
 
 #include <API.h>
 #include <math.h>
+#include "main.h"
+#include "motor.h"
 #include "ports.h"
 #include "tracking.h"
 
 #define MILLIS_PER_SECOND 1000
 
-Position position;
+#define MAX_LINEAR_SPEED 100.0
+#define MAX_ROTATION_SPEED 100.0
 
-void positionUpdate(unsigned long now) {
+typedef struct {
+    double x;
+    double y;
+    double a;
+    double v;
+    double w;
+    double k_1;
+    double k_2_v;
+    double k_3;
+} PositionTarget;
+
+static double normalizeAngle(double rads, double min, double max);
+static void setWheelSpeed(unsigned char front, unsigned char rear, double desired, double actual);
+
+Position position;
+PositionTarget positionTarget;
+
+void trackingUpdate(unsigned long now) {
     int left = encoderGet(encoderLeft);
     int right = encoderGet(encoderRight);
 
@@ -42,7 +62,7 @@ void positionUpdate(unsigned long now) {
     double midHeading = position.a + deltaHeading / 2;  // estimate of heading 1/2 way through the sample period
     position.x += deltaPosition * cos(midHeading);
     position.y += deltaPosition * sin(midHeading);
-    position.a = fmod(position.a + deltaHeading + M_TWOPI, M_TWOPI);
+    position.a = normalizeAngle(position.a + deltaHeading, 0, M_TWOPI);
 
     // Update our estimate of our velocity by averaging across the last few updates
     unsigned long sumMillis = 0;
@@ -62,6 +82,91 @@ void positionUpdate(unsigned long now) {
         position.v = (speedLeft + speedRight) * (WHEEL_RADIUS / 2);
         position.w = (speedRight - speedLeft) * (WHEEL_RADIUS / AXLE_LENGTH);
         position.leftRpm = speedLeft * (60 / M_TWOPI);
-        position.rightRpm = speedLeft * (60 / M_TWOPI);
+        position.rightRpm = speedRight * (60 / M_TWOPI);
     }
+}
+
+void trackingSetSpeed(double linearSpeed, double rotationSpeed) {
+    // Scale down inputs to maintain curvature radius if requested speeds exceeds physical limits
+    double saturation = MAX(abs(linearSpeed) / MAX_LINEAR_SPEED, abs(rotationSpeed) / MAX_ROTATION_SPEED);
+    if (saturation > 1) {
+        linearSpeed /= saturation;
+        rotationSpeed /= saturation;
+    }
+
+    // Convert desired linear & rotation values into tank chassis left & right RPM
+    double rpmFactor = (60 / (WHEEL_RADIUS * M_TWOPI));  // converts inches/second to RPM
+    double leftRpm = (linearSpeed + rotationSpeed * AXLE_LENGTH / 2) * rpmFactor;
+    double rightRpm = (linearSpeed - rotationSpeed * AXLE_LENGTH / 2) * rpmFactor;
+
+    setWheelSpeed(MOTOR_LEFT_F, MOTOR_LEFT_R, leftRpm, position.leftRpm);
+    setWheelSpeed(MOTOR_RIGHT_F, MOTOR_RIGHT_R, rightRpm, position.rightRpm);
+}
+
+void setWheelSpeed(unsigned char front, unsigned char rear, double desired, double actual) {
+    double delta = (actual - desired);
+
+    int value = 0; // TODO
+    smartMotorSet(front, value);
+    smartMotorSet(rear, value);
+}
+
+void trackingSetDriveTarget(double x, double y, double a) {
+    trackingSetDriveWaypoint(x, y, a, 0, 0);
+}
+
+void trackingSetDriveWaypoint(double x, double y, double a, double v, double w) {
+    // Don't come to a complete stop at the end, avoid singularities in the math of the feedback design
+    v = (abs(v) < 0.01) ? 0.01 : 0;
+    w = (abs(w) < 0.01) ? 0.01 : 0;
+
+    // Set destination location, heading and velocities
+    positionTarget.x = x;
+    positionTarget.y = y;
+    positionTarget.a = a;
+    positionTarget.v = v;
+    positionTarget.w = w;
+
+    // Compute the gain matrix for this target
+    double zeta = 0.7;  // damping factor, adjust 0 < zeta < 1 to get good results
+    double g = 60;      // gain constant, adjust 0 < gain to get good results
+    positionTarget.k_1 = 2 * zeta * sqrt(w * w + g * v * v);
+    positionTarget.k_2_v = g * v;
+    positionTarget.k_3 = positionTarget.k_1;
+}
+
+void trackingDriveToTarget() {
+    // Algorithm based on the Nonlinear Controller described at:
+    // https://www.researchgate.net/publication/224115822_Experimental_comparison_of_trajectory_tracking_algorithms_for_nonholonomic_mobile_robot
+
+    // Compute deviation from desired position and heading
+    double d_x = positionTarget.x - position.x;
+    double d_y = positionTarget.y - position.y;
+    double d_a = normalizeAngle(positionTarget.a - position.a, -M_PI, M_PI);
+
+    // Transform error values to the perspective of the robot
+    double cos_a = cos(position.a);
+    double sin_a = sin(position.a);
+    double e_1 = d_x * cos_a + d_y * sin_a;   // Distance to go straight ahead (may be negative)
+    double e_2 = d_y * cos_a - d_x * sin_a;   // Distance to go side-to-side (obviously can't move directly in that direction)
+    double e_3 = d_a;                         // Deviation from desired heading
+
+    // Compute feedforward linear and angular velocity
+    double uf_v = positionTarget.v * cos(e_3);
+    double uf_w = positionTarget.w;
+
+    // Compute feedback linear and angular velocity
+    double ub_v = e_1 * positionTarget.k_1;
+    double ub_w = e_2 * positionTarget.k_2_v * (abs(e_3) >= 0.001 ? sin(e_3) / e_3 : 1) + e_3 * positionTarget.k_3;
+
+    trackingSetSpeed(uf_v + ub_v, uf_w + ub_w);
+}
+
+double normalizeAngle(double rads, double min, double max) {
+    if (rads < min) {
+        rads += M_TWOPI;
+    } else if (rads >= max) {
+        rads -= M_TWOPI;
+    }
+    return rads;
 }

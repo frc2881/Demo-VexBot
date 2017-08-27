@@ -18,6 +18,7 @@ typedef struct {
 
 extern Calibration calibration;
 
+void calibrationInit();
 void calibrationStart(CalibrationMode mode);
 void calibrationUpdate(unsigned long now);
 void calibrationEnd();

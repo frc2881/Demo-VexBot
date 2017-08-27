@@ -8,8 +8,8 @@
 #ifndef tracking_h
 #define tracking_h
 
-#define WHEEL_RADIUS 4      // inches
 #define AXLE_LENGTH 10.25   // inches
+#define WHEEL_RADIUS 4      // inches
 #define RADIANS_PER_TICK (M_TWOPI/360)
 #define VELOCITY_SAMPLES 4
 
@@ -37,7 +37,14 @@ typedef struct {
     int deltaPos;                              // index of 'deltaHistory' containing the most recent
 } Position;
 
-void positionUpdate(unsigned long now);
+// Lifecycle
+void trackingUpdate(unsigned long now);
+void trackingDriveToTarget();
+
+// Control
+void trackingSetSpeed(double linearSpeed, double rotationSpeed);
+void trackingSetDriveTarget(double x, double y, double a);
+void trackingSetDriveWaypoint(double x, double y, double a, double v, double w);
 
 extern Position position;
 

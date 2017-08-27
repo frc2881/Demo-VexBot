@@ -44,14 +44,13 @@ set(SOURCE_FILES
         src/motor.c
         src/opcontrol.c
         src/pi.c
-        src/tracking.c
-        )
+        src/tracking.c)
 
 include_directories(include)
 
 add_executable(output.elf ${SOURCE_FILES})
 
-target_link_libraries(output.elf m)
+target_link_libraries(output.elf ${FIRMWARE_ROOT}/libpros.a m)
 
 add_custom_command(TARGET output.elf POST_BUILD
         COMMAND ${GCC_ARM_ROOT}/bin/arm-none-eabi-size output.elf

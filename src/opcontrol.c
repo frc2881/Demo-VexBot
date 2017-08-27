@@ -73,35 +73,34 @@ void operatorControl() {
     Controller *joystick = hidController(1);
     joystick->accel.vertScale = -1;  // Tilt down moves forward, tilt up moves back
 
+    calibrationInit();
+
     unsigned long previousWakeTime = millis();
     unsigned long sleptAt = millis();
     while (true) {
         unsigned long now = millis();
 
         // Update sensor readings
-//        positionUpdate(now);
+        trackingUpdate(now);
 
         // Update controller inputs
         hidUpdate(now);
 
-        if (joystick->rightButtons.up.pressed == -1) {
+        if (joystick->rightButtons.up.changed == -1) {
             calibrationStart(CALIBRATE_MOTOR_RPM);
-        }
-
-        // Is the robot running a semi-autonomous task?
-        bool underUserControl = (calibration.mode == CALIBRATE_NONE);
-
-        // Any joystick input cancels semi-autonomous tasks
-        if (!underUserControl && joystick->lastChangedTime == now) {
+        } else if (joystick->lastChangedTime == now) {
+            // Any joystick input cancels semi-autonomous tasks
             calibrationEnd();
-            underUserControl = true;
         }
 
         // What chassis control algorithm has the user selected?
         DriveMode controlMode = chooseDriveMode();
 
-        // Use joysticks to control drive train
+        // Is the robot running a semi-autonomous task or under user control?
+        bool underUserControl = (calibration.mode == CALIBRATE_NONE);
+
         if (underUserControl) {
+            // Use joysticks to control drive train
             bool squared = joystick->rightButtons.right.pressed;
             if (controlMode == DRIVE_TANK) {
                 tankDrive(joystick->left.vert, joystick->right.vert, squared);
@@ -110,9 +109,11 @@ void operatorControl() {
             } else {
                 arcadeDrive(joystick->accel.vert, joystick->accel.horz);
             }
-
             // Experimental pneumatics
 //            digitalWrite(1, joystick->rightButtons.left.pressed);
+        } else {
+            // Some form of semi-autonomous control
+            calibrationUpdate(now);
         }
 
         // Apply desired drive settings to all motors

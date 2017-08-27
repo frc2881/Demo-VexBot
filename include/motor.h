@@ -5,7 +5,7 @@
 void smartMotorInit();
 void smartMotorUpdate();
 
-// Get or Set current state
+// Control
 short smartMotorGet(unsigned char channel);
 void smartMotorSet(unsigned char channel, short speed);
 void smartMotorStopAll();

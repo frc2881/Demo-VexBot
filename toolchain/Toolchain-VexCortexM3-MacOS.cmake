@@ -27,4 +27,4 @@ set(COMPILER_FLAGS "-Wall ${MCUCFLAGS} -Os -ffunction-sections -fsigned-char -fo
 
 set(CMAKE_C_FLAGS "${COMPILER_FLAGS} -Werror=implicit-function-declaration" CACHE STRING "")
 set(CMAKE_CXX_FLAGS "${COMPILER_FLAGS} -fno-exceptions -fno-rtti -felide-constructors" CACHE STRING "")
-set(CMAKE_EXE_LINKER_FLAGS "${MCULFLAGS} -Wl,--gc-sections ${FIRMWARE_ROOT}/libpros.a -lgcc -lm" CACHE STRING "")
+set(CMAKE_EXE_LINKER_FLAGS "${MCULFLAGS} -Wl,--gc-sections -lgcc" CACHE STRING "")
