@@ -10,8 +10,14 @@
  * obtained from http://sourceforge.net/projects/freertos/files/ or on request.
  */
 
+#include <API.h>
 #include "main.h"
-#include "pi.h"
+#include "motor.h"
+#include "ports.h"
+
+Gyro gyro;
+Encoder encoderLeft;
+Encoder encoderRight;
 
 /*
  * Runs pre-initialization code. This function will be started in kernel mode one time while the
@@ -22,12 +28,15 @@
  * configure a UART port (usartOpen()) but cannot set up an LCD (lcdInit()).
  */
 void initializeIO() {
-  // Reset the Cortex if static shock etc. causes the Cortex to lock up.
-  watchdogInit();
+    // Reset the Cortex if static shock etc. causes the Cortex to lock up.
+    watchdogInit();
 
-  // Initialize output pins (pneumatics, etc.)
-//  pinMode(1, OUTPUT);
-//  digitalWrite(1, LOW);
+    pinMode(BUMPER_LEFT, INPUT);
+    pinMode(BUMPER_RIGHT, INPUT);
+
+    // Initialize output pins (pneumatics, leds, etc.)
+    pinMode(LED_GREEN, OUTPUT);
+    digitalWrite(LED_GREEN, HIGH);
 }
 
 /*
@@ -44,11 +53,21 @@ void initializeIO() {
  * can be implemented in this task if desired.
  */
 void initialize() {
-    lcdInit(uart1);
-    lcdClear(uart1);
-    lcdSetBacklight(uart1, true);
+    lcdInit(LCD_PORT);
+    lcdClear(LCD_PORT);
+    lcdSetBacklight(LCD_PORT, true);
 
-//    imeInitializeAll();
+    //    piInit(RASPBERRY_PI_PORT);
 
-    piInit(uart2);
+    gyro = gyroInit(GYRO, 196);  // 196 is the default, tweak if Gyro appears to under or over-report rotation
+
+    encoderLeft = encoderInit(ENCODER_LEFT_TOP, ENCODER_LEFT_BOTTOM, false);
+    encoderRight = encoderInit(ENCODER_RIGHT_TOP, ENCODER_RIGHT_BOTTOM, true);
+
+//  sonarLeft = ultrasonicInit(4, 3);
+//  sonarRight = ultrasonicInit(2, 1);
+
+    smartMotorInit();
+    smartMotorReversed(MOTOR_RIGHT_F, true);
+    smartMotorReversed(MOTOR_RIGHT_R, true);
 }

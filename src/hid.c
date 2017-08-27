@@ -73,10 +73,10 @@ static void hidUpdateController(Controller *input) {
     unsigned char port = input->port;
     hidUpdateJoystick(&input->left, port, 3, 4, &changed);
     hidUpdateJoystick(&input->right, port, 2, 1, &changed);
-    hidUpdateGroup2(&input->leftButtons2, port, 5, &changed);
-    hidUpdateGroup2(&input->rightButtons2, port, 6, &changed);
-    hidUpdateGroup4(&input->leftButtons4, port, 7, &changed);
-    hidUpdateGroup4(&input->rightButtons4, port, 8, &changed);
+    hidUpdateGroup2(&input->leftTrigger, port, 5, &changed);
+    hidUpdateGroup2(&input->rightTrigger, port, 6, &changed);
+    hidUpdateGroup4(&input->leftButtons, port, 7, &changed);
+    hidUpdateGroup4(&input->rightButtons, port, 8, &changed);
     if (changed) {
         input->lastChangedTime = millis();
     }

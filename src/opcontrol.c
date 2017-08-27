@@ -11,45 +11,65 @@
  */
 
 #include <API.h>
-#include "hid.h"
+#include <hid.h>
+#include <math.h>
+#include <string.h>
 #include "main.h"
 #include "motor.h"
-
-/* Motor output mappings */
-#define MOTOR_LEFT_F 1
-#define MOTOR_LEFT_R 2
-#define MOTOR_CLAW 6
-#define MOTOR_ARM 7
-#define MOTOR_RIGHT_F 10
-#define MOTOR_RIGHT_R 9
+#include "ports.h"
 
 #define CONTROL_TANK 0
 #define CONTROL_ARCADE 1
-#define CONTROL_GRYO 2
+#define CONTROL_ACCEL 2
 
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
+
+#define SLEEP_MILLIS 20
 
 int chooseControlMode();
 
 void arcadeDrive(int power, int turnCC);
 
-void tankDrive(int left, int right);
-
-void mechArm(bool up, bool down);
-
-void mechArmAnalog(int speed);
-
-void mechClaw(bool open, bool close);
-
-void mechClawAnalog(int speed);
+void tankDrive(int left, int right, bool squared);
 
 void debugUpdate();
 
 void debugPrintState();
 
-void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick,
-               Ultrasonic sonarLeft, Ultrasonic sonarRight,
+void ledUpdate(unsigned long now);
+
+void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, int controlMode,
                unsigned long sleptAt, unsigned long now);
+
+#define WHEEL_RADIUS 4      // inches
+#define AXLE_LENGTH 10.25   // inches
+#define TICKS_TO_RADIANS (M_TWOPI/360)
+#define VELOCITY_SAMPLES 4
+
+#define RADIANS_TO_DEGREES (360/M_TWOPI)
+#define MILLIS_PER_SECOND 1000
+
+typedef struct {
+    unsigned long millis;
+    int left;
+    int right;
+} TickDelta;
+
+typedef struct {
+    unsigned long time;
+    int left;
+    int right;
+    double x;
+    double y;
+    double a;  // current heading (radians)
+    double v;  // forward velocity
+    double w;  // rate of rotation counter-clockwise (radians/s)
+    int deltaPos;
+    TickDelta deltaHistory[VELOCITY_SAMPLES];
+} Position;
+
+static Position position;
 
 static short s_debugCounter = 0;
 static short s_debugInterval = 25;
@@ -76,65 +96,101 @@ static char _spinnerChars[] = "-\\|/";
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
 
+void positionUpdate(unsigned long now) {
+    int left = encoderGet(encoderLeft);
+    int right = encoderGet(encoderRight);
+
+    // Calculate change vs. the last time
+    TickDelta* delta = &position.deltaHistory[position.deltaPos];
+    position.deltaPos = (position.deltaPos + 1) % VELOCITY_SAMPLES;
+    if (position.time != 0) {
+        delta->millis = now - position.time;
+        delta->left = left - position.left;
+        delta->right = right - position.right;
+    }
+    position.time = now;
+    position.left = left;
+    position.right = right;
+
+    if (abs(delta->left) > 360 || abs(delta->right) > 360) {
+        return;  // ignore bad data due to encoder resets etc.
+    }
+
+    // Update our estimate of our position and heading
+    double radiansLeft = delta->left * TICKS_TO_RADIANS;
+    double radiansRight = delta->right * TICKS_TO_RADIANS;
+    double deltaPosition = (radiansLeft + radiansRight) * (WHEEL_RADIUS / 2);  // this averages left and right
+    double deltaHeading = (radiansRight - radiansLeft) * (WHEEL_RADIUS / AXLE_LENGTH);
+    double midHeading = position.a + deltaHeading / 2;  // estimate of heading 1/2 way through the sample period
+    position.x += deltaPosition * cos(midHeading);
+    position.y += deltaPosition * sin(midHeading);
+    position.a = fmod(position.a + deltaHeading + M_TWOPI, M_TWOPI);
+
+    // Update our estimate of our velocity by averaging across the last few updates
+    unsigned long sumMillis = 0;
+    int sumLeft = 0, sumRight = 0;
+    for (int i = 0; i < VELOCITY_SAMPLES; i++) {
+        TickDelta* sample = &position.deltaHistory[i];
+        if (abs(sample->left) > 360 || abs(sample->right) > 360) {
+            continue;  // ignore bad data due to encoder resets etc.
+        }
+        sumMillis += sample->millis;
+        sumLeft += sample->left;
+        sumRight += sample->right;
+    }
+    if (sumMillis > 0) {
+        double speedLeft = sumLeft * (TICKS_TO_RADIANS * MILLIS_PER_SECOND / (double) sumMillis);
+        double speedRight = sumRight * (TICKS_TO_RADIANS * MILLIS_PER_SECOND / (double) sumMillis);
+        position.v = (speedLeft + speedRight) * (WHEEL_RADIUS / 2);
+        position.w = (speedRight - speedLeft) * (WHEEL_RADIUS / AXLE_LENGTH);
+    }
+}
+
 void operatorControl() {
-
     // Initialize input from Joystick 1 (and optionally LCD 1 buttons)
-    hidInit(1, uart1);
-
+    hidInit(1, LCD_PORT);
     LcdInput *lcdInput = hidLcd();
     Controller *joystick = hidController(1);
     joystick->accel.vertScale = -1;  // Tilt down moves forward, tilt up moves back
-
-    smartMotorInit();
-    smartMotorReversed(MOTOR_RIGHT_F, true);
-    smartMotorReversed(MOTOR_RIGHT_R, true);
-    smartMotorReversed(MOTOR_ARM, true);
-    smartMotorSlew(MOTOR_ARM, 0.1, 0.5);  // Slow down the arm a lot since otherwise it's very jerky
-    smartMotorSlew(MOTOR_CLAW, 0.1, 100);  // Slow down the claw
-
-    Ultrasonic sonarLeft = ultrasonicInit(4, 3);
-    Ultrasonic sonarRight = ultrasonicInit(2, 1);
 
     unsigned long previousWakeTime = millis();
     unsigned long sleptAt = millis();
     while (true) {
         unsigned long now = millis();
 
+        positionUpdate(now);
         hidUpdate();
 
         // What chassis control algorithm has the user selected?
         int controlMode = chooseControlMode();
 
-        if (joystick->leftButtons4.up.pressed) {
-            // Override, when pressed use joysticks to control mechanisms
-            mechArmAnalog(joystick->right.vert);
-            mechClawAnalog(joystick->left.vert);
+        // Use joysticks to control drive train
+        bool squared = joystick->rightButtons.right.pressed;
+        if (controlMode == CONTROL_TANK) {
+            tankDrive(joystick->left.vert, joystick->right.vert, squared);
+        } else if (controlMode == CONTROL_ARCADE) {
+            arcadeDrive(joystick->right.vert, joystick->left.horz);
         } else {
-            // Normal, use joysticks to control drive train
-            if (controlMode == CONTROL_TANK) {
-                tankDrive(joystick->left.vert, joystick->right.vert);
-            } else if (controlMode == CONTROL_ARCADE) {
-                arcadeDrive(joystick->right.vert, joystick->right.horz);
-            } else {
-                arcadeDrive(joystick->accel.vert, joystick->accel.horz);
-            }
-            mechArm(joystick->rightButtons2.up.pressed, joystick->rightButtons2.down.pressed);
-            mechClaw(joystick->leftButtons2.up.pressed, joystick->leftButtons2.down.pressed);
+            arcadeDrive(joystick->accel.vert, joystick->accel.horz);
         }
 
         // Experimental pneumatics
-//        digitalWrite(1, joystick->rightButtons4.left.pressed);
+//        digitalWrite(1, joystick->rightButtons.left.pressed);
 
-        smartMotorSlewEnabled(!joystick->rightButtons4.up.pressed);
+        // Disable smart motor slew control with a button press
+        smartMotorSlewEnabled(!joystick->rightButtons.up.pressed);
+
+        // Apply desired drive settings to all motors
         smartMotorUpdate();
 
-        lcdUpdate(lcdInput, joystick, sonarLeft, sonarRight, sleptAt, now);
-
+        // Show status
+        ledUpdate(now);
+        lcdUpdate(lcdInput, joystick, controlMode, sleptAt, now);
         debugUpdate();
 
-        // Sleep for a while, give other tasks a chance t orun
+        // Sleep for a while, give other tasks a chance to run
         sleptAt = millis();
-        taskDelayUntil(&previousWakeTime, 20);
+        taskDelayUntil(&previousWakeTime, SLEEP_MILLIS);
     }
 }
 
@@ -150,33 +206,21 @@ void arcadeDrive(int power, int turnCC) {
     smartMotorSet(MOTOR_RIGHT_R, power - turnCC);  // set right wheel(s)
 }
 
-void tankDrive(int left, int right) {
+void tankDrive(int left, int right, bool squared) {
+    if (squared) {
+        left = left * left / 255;
+        right = right * right / 255;
+    }
     smartMotorSet(MOTOR_LEFT_F, left);  // set left-front wheel(s)
     smartMotorSet(MOTOR_LEFT_R, left);  // set left-rear wheel(s)
     smartMotorSet(MOTOR_RIGHT_F, right);  // set right wheel(s)
     smartMotorSet(MOTOR_RIGHT_R, right);  // set right wheel(s)
 }
 
-void mechArm(bool up, bool down) {
-    smartMotorSet(MOTOR_ARM, up * 127 - down * 127);
-}
-
-void mechArmAnalog(int speed) {
-    smartMotorSet(MOTOR_ARM, speed);
-}
-
-void mechClaw(bool open, bool close) {
-    smartMotorSet(MOTOR_CLAW, open * 127 - close * 127);
-}
-
-void mechClawAnalog(int speed) {
-    smartMotorSet(MOTOR_CLAW, speed);
-}
-
 int chooseControlMode() {
-    static int s_controlMode = 0;
+    static int s_controlMode = CONTROL_TANK;
     // button '8 down' cycles through control modes on button up
-    if (hidController(1)->rightButtons4.down.changed == 1) {
+    if (hidController(1)->rightButtons.down.changed == 1) {
         s_controlMode = (s_controlMode + 1) % 3;
     }
     return s_controlMode;
@@ -184,13 +228,13 @@ int chooseControlMode() {
 
 void debugUpdate() {
     Controller *master = hidController(1);
-    if (master->leftButtons4.up.changed == 1 && s_debugInterval > 1) {
+    if (master->leftButtons.up.changed == 1 && s_debugInterval > 1) {
         s_debugInterval--;
     }
-    if (master->leftButtons4.down.changed == 1) {
+    if (master->leftButtons.down.changed == 1) {
         s_debugInterval++;
     }
-    if (++s_debugCounter >= s_debugInterval && master->leftButtons4.left.pressed) {
+    if (++s_debugCounter >= s_debugInterval && master->leftButtons.left.pressed) {
         debugPrintState();
         s_debugCounter = 0;
     }
@@ -242,31 +286,109 @@ void debugPrintState() {
     // luDn, luUp, luLt, luRt, ruDn, ruUp, ruLt, ruRt);
 }
 
-// Update the LCD (2 lines x 16 characters)
-void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick,
-               Ultrasonic sonarLeft, Ultrasonic sonarRight,
-               unsigned long sleptAt, unsigned long now) {
+// Toggle the LED indicator to prove that we haven't crashed
+void ledUpdate(unsigned long now) {
+    static unsigned long toggleIndicatorAt;
+    if (toggleIndicatorAt == 0 || now >= toggleIndicatorAt) {
+        digitalWrite(LED_GREEN, digitalRead(LED_GREEN) ? LOW : HIGH);
+        toggleIndicatorAt = now + 500;
+    }
+}
 
-    if (now - lcdInput->lastChangedTime < 3000) {
-        // Show which LCD buttons have been pressed
+// Update the LCD (2 lines x 16 characters)
+void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, int controlMode,
+               unsigned long sleptAt, unsigned long now) {
+    static int displayMode = 1;  // TODO
+    static unsigned long tempExpiresAt;
+
+    unsigned int secSinceChange = (unsigned int) ((now - MAX(joystick->lastChangedTime, lcdInput->lastChangedTime)) / 1000);
+
+    // Left LCD button cycles through the display modes
+    if (lcdInput->left.changed == 1) {
+        displayMode = (displayMode + 1) % 6;
+        tempExpiresAt = now + 1000;
+    }
+    char line1[17] = "", line2[17] = "";
+    int n = -1;
+    if (displayMode == ++n) {
         // 0123456789abcdef
-        // LCD L=0 M=1 R=1
-        lcdPrint(uart1, 1, "LCD:  %c %c %c", lcdInput->left.pressed ? 'L' : ' ',
-                 lcdInput->center.pressed ? 'M' : ' ', lcdInput->right.pressed ? 'R' : ' ');
-    } else {
-        // Show ultrasonic left & right
-        // 0123456789abcdef
-        // L=200  R=200
-        int distLeft = ultrasonicGet(sonarLeft);
-        int distRight = ultrasonicGet(sonarRight);
-        lcdPrint(uart1, 1, "L=%3d  R=%3d", distLeft, distRight);
+        // ARCADE DRIVE
+        // CPU=20 IDLE=99 *
+        char* modeString = (controlMode == CONTROL_TANK) ? "TANK" : (controlMode == CONTROL_ARCADE) ? "ARCADE" : "ACCEL";
+        unsigned int millisSinceSlept = (unsigned int) (now - sleptAt);  // how much idle time did the cpu have?
+        int cpuUsage = (SLEEP_MILLIS - millisSinceSlept) * 100 / SLEEP_MILLIS;
+        snprintf(line1, 17, "%s DRIVE", modeString);
+        snprintf(line2, 17, "CPU=%-2d IDLE=%d", MIN(cpuUsage, 99), MIN(secSinceChange, 99));
+
+    } else if (displayMode == ++n) {
+        // Show estimated position (inches), heading (degrees) and linear velocity (inches/sec)
+        if (now < tempExpiresAt) {
+            // 0123456789abcdef
+            // Position
+            // Heading Speed  /
+            snprintf(line1, 17, "Position");
+            snprintf(line2, 17, "Heading RPM");
+        } else {
+            // 0123456789abcdef
+            // X+123.4 Y-123.4
+            // A+123.4 V-123.4
+            snprintf(line1, 17, "X%+4.1f Y%+4.1f", position.x, position.y);
+            snprintf(line2, 17, "A%+4.1f V%+4.1f", position.a * RADIANS_TO_DEGREES, position.v / WHEEL_RADIUS * 30);
+        }
+
+    } else if (displayMode == ++n) {
+        // Show estimated heading (degrees), angular velocity (degrees/sec), gyro heading (degrees)
+        if (now < tempExpiresAt) {
+            // 0123456789abcdef
+            // Heading Turning
+            // Gyro
+            snprintf(line1, 17, "Heading Turning");
+            snprintf(line2, 17, "Gyro");
+        } else {
+            // 0123456789abcdef
+            // A+123.4 W-123.4
+            // G+123.4
+            snprintf(line1, 17, "A%+4.1f W%+4.1f", position.a * RADIANS_TO_DEGREES, position.w * RADIANS_TO_DEGREES);
+            snprintf(line2, 17, "G%+4d", gyroGet(gyro));
+        }
+
+    } else if (displayMode == ++n) {
+        if (now < tempExpiresAt) {
+            snprintf(line1, 17, "Encoders");
+        } else {
+            // 0123456789abcdef
+            // Left=  -123456
+            // Right= +123456
+            snprintf(line1, 17, "Left=  %-+6d", encoderGet(encoderLeft));
+            snprintf(line2, 17, "Right= %-+6d", encoderGet(encoderRight));
+        }
+
+    } else if (displayMode == ++n) {
+        bool bumperLeft = digitalRead(BUMPER_LEFT);
+        bool bumperRight = digitalRead(BUMPER_RIGHT);
+        snprintf(line1, 17, "Bumpers");
+        snprintf(line2, 17, "L=%d R=%d", bumperLeft, bumperRight);
+
+    } else if (displayMode == ++n) {
+        if (now < tempExpiresAt) {
+            snprintf(line1, 17, "Battery Levels");
+        } else {
+            // 0123456789abcdef
+            // Battery= 7.123
+            // Backup=  9.123
+            snprintf(line1, 17, "Battery= %.3f", powerLevelMain() / 1000.0);
+            snprintf(line2, 17, "Backup=  %.3f", powerLevelBackup() / 1000.0);
+        }
     }
 
-    // 0123456789abcdef
-    // W=20  CH=12345 *
-    unsigned int millisSinceSlept = (unsigned int) (now - sleptAt);  // how much idle time did the cpu have?
-    unsigned int secSinceChange = (unsigned int) ((now - MAX(joystick->lastChangedTime, lcdInput->lastChangedTime)) / 1000);
-    char spinner = _spinnerChars[(now / 250) % 4];  // rotate once per second
-    lcdPrint(uart1, 2, "W=%-3u CH=%-5u %c", millisSinceSlept, secSinceChange, spinner);
-    lcdSetBacklight(uart1, secSinceChange < 60);  // save battery: turn off the backlight after 60 seconds
+    // Append the spinner to the end of the 2nd line to show that the LCD screen is alive
+    for (int i = strlen(line2); i < 15; i++) {
+        line2[i] = ' ';
+    }
+    line2[15] = _spinnerChars[(now / 250) % 4];  // rotate once per second
+    line2[16] = 0;
+
+    lcdSetText(LCD_PORT, 1, line1);
+    lcdSetText(LCD_PORT, 2, line2);
+    lcdSetBacklight(LCD_PORT, secSinceChange < 60);  // save battery: turn off the backlight after 60 seconds
 }
