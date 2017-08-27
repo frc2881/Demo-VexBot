@@ -10,11 +10,10 @@
 
 #define WHEEL_RADIUS 4      // inches
 #define AXLE_LENGTH 10.25   // inches
-#define TICKS_TO_RADIANS (M_TWOPI/360)
+#define RADIANS_PER_TICK (M_TWOPI/360)
 #define VELOCITY_SAMPLES 4
 
-#define RADIANS_TO_DEGREES (360/M_TWOPI)
-#define MILLIS_PER_SECOND 1000
+#define DEGREES_PER_RADIAN (360/M_TWOPI)
 
 // Difference in encoder tick count over a time period
 typedef struct {
@@ -31,7 +30,9 @@ typedef struct {
     double y;   // relative to robot start location (inches)
     double a;   // current heading (radians)
     double v;   // forward velocity (inches/second)
-    double w;   // rate of turn (counter-clockwise radians/second)
+    double w;   // rate of turning left (positive) or right (negative) (radians/second)
+    double leftRpm;
+    double rightRpm;
     TickDelta deltaHistory[VELOCITY_SAMPLES];  // recent history of tick count measurements (ring buffer)
     int deltaPos;                              // index of 'deltaHistory' containing the most recent
 } Position;

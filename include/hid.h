@@ -62,9 +62,9 @@ typedef struct {
 } LcdInput;
 
 void hidInit(int numControllers, FILE *lcdPort);
-void hidUpdate();
+void hidUpdate(unsigned long now);
 
 Controller *hidController(unsigned char controller);
-LcdInput *hidLcd();
+LcdInput *hidLcdInput();
 
 #endif

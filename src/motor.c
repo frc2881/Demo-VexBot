@@ -102,3 +102,10 @@ void smartMotorSet(unsigned char channel, short speed) {
     SmartMotor *m = &_smartMotorState[channel - 1];
     m->desired = speed * m->scale;
 }
+
+void smartMotorStopAll() {
+    for (unsigned char channel = 1; channel <= 10; channel++) {
+        SmartMotor *m = &_smartMotorState[channel - 1];
+        m->desired = 0;
+    }
+}

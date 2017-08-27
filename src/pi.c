@@ -1,5 +1,5 @@
 /** @file pi.c
- * @brief Communicates with Raspberry Pi via serial port
+ * @brief Communicates with Raspberry Pi via serial port (aka UART)
  */
 
 #include <API.h>
@@ -48,7 +48,6 @@ static void piLoop(void *params) {
 
         // TODO: ultrasonic
         // TODO: motor encoders
-        // TODO: ime
 
         bool all = strncmp(cmd, "all", sizeof(cmd)) == 0;
         if (all || strncmp(cmd, "time", sizeof(cmd)) == 0) {

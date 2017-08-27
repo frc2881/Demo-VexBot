@@ -13,21 +13,21 @@
 #include <math.h>
 #include <string.h>
 #include "main.h"
+#include "calibrate.h"
 #include "hid.h"
 #include "motor.h"
 #include "ports.h"
 #include "tracking.h"
 
-#define CONTROL_TANK 0
-#define CONTROL_ARCADE 1
-#define CONTROL_ACCEL 2
-
-#define MIN(x, y) (((x) < (y)) ? (x) : (y))
-#define MAX(x, y) (((x) > (y)) ? (x) : (y))
-
 #define SLEEP_MILLIS 20
 
-int chooseControlMode();
+typedef enum {
+    DRIVE_TANK,    // Left joystick controls left wheels, right joystick controls right wheels
+    DRIVE_ARCADE,  // Left joystick turns, right joystick for forward & back
+    DRIVE_ACCEL,   // Controller accelerometer (tilt the controller forward & back, left & right)
+} DriveMode;
+
+DriveMode chooseDriveMode();
 
 void arcadeDrive(int power, int turnCC);
 
@@ -39,7 +39,7 @@ void debugPrintState();
 
 void ledUpdate(unsigned long now);
 
-void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, int controlMode,
+void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode controlMode,
                unsigned long sleptAt, unsigned long now);
 
 static short s_debugCounter = 0;
@@ -66,11 +66,10 @@ static char _spinnerChars[] = "-\\|/";
  */
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
-
 void operatorControl() {
     // Initialize input from Joystick 1 (and optionally LCD 1 buttons)
     hidInit(1, LCD_PORT);
-    LcdInput *lcdInput = hidLcd();
+    LcdInput *lcdInput = hidLcdInput();
     Controller *joystick = hidController(1);
     joystick->accel.vertScale = -1;  // Tilt down moves forward, tilt up moves back
 
@@ -79,27 +78,42 @@ void operatorControl() {
     while (true) {
         unsigned long now = millis();
 
-        positionUpdate(now);
-        hidUpdate();
+        // Update sensor readings
+//        positionUpdate(now);
 
-        // What chassis control algorithm has the user selected?
-        int controlMode = chooseControlMode();
+        // Update controller inputs
+        hidUpdate(now);
 
-        // Use joysticks to control drive train
-        bool squared = joystick->rightButtons.right.pressed;
-        if (controlMode == CONTROL_TANK) {
-            tankDrive(joystick->left.vert, joystick->right.vert, squared);
-        } else if (controlMode == CONTROL_ARCADE) {
-            arcadeDrive(joystick->right.vert, joystick->left.horz);
-        } else {
-            arcadeDrive(joystick->accel.vert, joystick->accel.horz);
+        if (joystick->rightButtons.up.pressed == -1) {
+            calibrationStart(CALIBRATE_MOTOR_RPM);
         }
 
-        // Experimental pneumatics
-//        digitalWrite(1, joystick->rightButtons.left.pressed);
+        // Is the robot running a semi-autonomous task?
+        bool underUserControl = (calibration.mode == CALIBRATE_NONE);
 
-        // Disable smart motor slew control with a button press
-        smartMotorSlewEnabled(!joystick->rightButtons.up.pressed);
+        // Any joystick input cancels semi-autonomous tasks
+        if (!underUserControl && joystick->lastChangedTime == now) {
+            calibrationEnd();
+            underUserControl = true;
+        }
+
+        // What chassis control algorithm has the user selected?
+        DriveMode controlMode = chooseDriveMode();
+
+        // Use joysticks to control drive train
+        if (underUserControl) {
+            bool squared = joystick->rightButtons.right.pressed;
+            if (controlMode == DRIVE_TANK) {
+                tankDrive(joystick->left.vert, joystick->right.vert, squared);
+            } else if (controlMode == DRIVE_ARCADE) {
+                arcadeDrive(joystick->right.vert, joystick->left.horz);
+            } else {
+                arcadeDrive(joystick->accel.vert, joystick->accel.horz);
+            }
+
+            // Experimental pneumatics
+//            digitalWrite(1, joystick->rightButtons.left.pressed);
+        }
 
         // Apply desired drive settings to all motors
         smartMotorUpdate();
@@ -114,7 +128,6 @@ void operatorControl() {
         taskDelayUntil(&previousWakeTime, SLEEP_MILLIS);
     }
 }
-
 #pragma clang diagnostic pop
 
 /*
@@ -129,8 +142,8 @@ void arcadeDrive(int power, int turnCC) {
 
 void tankDrive(int left, int right, bool squared) {
     if (squared) {
-        left = left * left / 255;
-        right = right * right / 255;
+        left = left * abs(left) / 127;
+        right = right * abs(right) / 127;
     }
     smartMotorSet(MOTOR_LEFT_F, left);  // set left-front wheel(s)
     smartMotorSet(MOTOR_LEFT_R, left);  // set left-rear wheel(s)
@@ -138,8 +151,8 @@ void tankDrive(int left, int right, bool squared) {
     smartMotorSet(MOTOR_RIGHT_R, right);  // set right wheel(s)
 }
 
-int chooseControlMode() {
-    static int s_controlMode = CONTROL_TANK;
+DriveMode chooseDriveMode() {
+    static DriveMode s_controlMode = DRIVE_TANK;
     // button '8 down' cycles through control modes on button up
     if (hidController(1)->rightButtons.down.changed == 1) {
         s_controlMode = (s_controlMode + 1) % 3;
@@ -217,12 +230,16 @@ void ledUpdate(unsigned long now) {
 }
 
 // Update the LCD (2 lines x 16 characters)
-void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, int controlMode,
+void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode controlMode,
                unsigned long sleptAt, unsigned long now) {
     static int displayMode = 1;  // TODO
     static unsigned long tempExpiresAt;
 
     unsigned int secSinceChange = (unsigned int) ((now - MAX(joystick->lastChangedTime, lcdInput->lastChangedTime)) / 1000);
+
+    // The LCD shows two lines of 16 characters.  To help make sure that status messages fit w/in the 16
+    // characters width of the display, there are comments below with 16 characters "0123456789abcdef" that
+    // line up with a sample of status text.  By comparing the two, it's easy to see messages that are too long.
 
     // Left LCD button cycles through the display modes
     if (lcdInput->left.changed == 1) {
@@ -231,11 +248,18 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, int control
     }
     char line1[17] = "", line2[17] = "";
     int n = -1;
-    if (displayMode == ++n) {
+    if (calibration.mode == CALIBRATE_MOTOR_RPM) {
+        // 0123456789abcdef
+        // IN= -123   V=7.2
+        // OUT=-123.234
+        snprintf(line1, 17, "IN= %-4d   V=%.1f", calibration.input, powerLevelMain() / 1000.0);
+        snprintf(line2, 17, "OUT=%-.3f", calibration.lastRpm);
+
+    } else if (displayMode == ++n) {
         // 0123456789abcdef
         // ARCADE DRIVE
-        // CPU=20 IDLE=99 *
-        char* modeString = (controlMode == CONTROL_TANK) ? "TANK" : (controlMode == CONTROL_ARCADE) ? "ARCADE" : "ACCEL";
+        // CPU=20 IDLE=99 /
+        char* modeString = (controlMode == DRIVE_TANK) ? "TANK" : (controlMode == DRIVE_ARCADE) ? "ARCADE" : "ACCEL";
         unsigned int millisSinceSlept = (unsigned int) (now - sleptAt);  // how much idle time did the cpu have?
         int cpuUsage = (SLEEP_MILLIS - millisSinceSlept) * 100 / SLEEP_MILLIS;
         snprintf(line1, 17, "%s DRIVE", modeString);
@@ -244,38 +268,35 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, int control
     } else if (displayMode == ++n) {
         // Show estimated position (inches), heading (degrees) and linear velocity (inches/sec)
         if (now < tempExpiresAt) {
-            // 0123456789abcdef
-            // Position
-            // Heading Speed  /
+            //                   0123456789abcdef
             snprintf(line1, 17, "Position");
-            snprintf(line2, 17, "Heading, RPM");
+            snprintf(line2, 17, "Heading, Speed");
         } else {
             // 0123456789abcdef
             // X+123.4 Y-123.4
             // A+123.4 V-123.4
-            double rpm = position.v * 60 / (M_TWOPI * WHEEL_RADIUS);  // convert inch/second to rotation/minute
             snprintf(line1, 17, "X%+4.1f Y%+4.1f", position.x, position.y);
-            snprintf(line2, 17, "A%+4.1f V%+4.1f", position.a * RADIANS_TO_DEGREES, rpm);
+            snprintf(line2, 17, "A%+4.1f V%+4.1f", position.a * DEGREES_PER_RADIAN, position.v);
         }
 
     } else if (displayMode == ++n) {
         // Show estimated heading (degrees), angular velocity (degrees/sec), gyro heading (degrees)
         if (now < tempExpiresAt) {
-            // 0123456789abcdef
-            // Heading Turning
-            // Gyro
-            snprintf(line1, 17, "Heading Turning");
-            snprintf(line2, 17, "Gyro");
+            //                   0123456789abcdef
+            snprintf(line1, 17, "Heading, Turning");
+            snprintf(line2, 17, "Gyro, RPM");
         } else {
             // 0123456789abcdef
             // A+123.4 W-123.4
-            // G+123.4
-            snprintf(line1, 17, "A%+4.1f W%+4.1f", position.a * RADIANS_TO_DEGREES, position.w * RADIANS_TO_DEGREES);
-            snprintf(line2, 17, "G%+4d", gyroGet(gyro));
+            // G+123 RPM+123.4
+            double rpm = abs(position.leftRpm) > abs(position.rightRpm) ? position.leftRpm : position.rightRpm;
+            snprintf(line1, 17, "A%+4.1f W%+4.1f", position.a * DEGREES_PER_RADIAN, position.w * DEGREES_PER_RADIAN);
+            snprintf(line2, 17, "G%+4d RPM%+4.1f", gyroGet(gyro), rpm);  // RPM of the faster side
         }
 
     } else if (displayMode == ++n) {
         if (now < tempExpiresAt) {
+            //                   0123456789abcdef
             snprintf(line1, 17, "Encoders");
         } else {
             // 0123456789abcdef
@@ -298,7 +319,7 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, int control
             // 0123456789abcdef
             // Battery= 7.123
             // Backup=  9.123
-            snprintf(line1, 17, "Battery= %.3f", powerLevelMain() / 1000.0);
+            snprintf(line1, 17, "Battery= %.3f", powerLevelMain() / 1000.0);  // millivolts -> volts
             snprintf(line2, 17, "Backup=  %.3f", powerLevelBackup() / 1000.0);
         }
     }

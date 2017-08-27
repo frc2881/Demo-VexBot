@@ -10,6 +10,8 @@
 #include "ports.h"
 #include "tracking.h"
 
+#define MILLIS_PER_SECOND 1000
+
 Position position;
 
 void positionUpdate(unsigned long now) {
@@ -33,8 +35,8 @@ void positionUpdate(unsigned long now) {
     }
 
     // Update our estimate of our position and heading
-    double radiansLeft = delta->left * TICKS_TO_RADIANS;
-    double radiansRight = delta->right * TICKS_TO_RADIANS;
+    double radiansLeft = delta->left * RADIANS_PER_TICK;
+    double radiansRight = delta->right * RADIANS_PER_TICK;
     double deltaPosition = (radiansLeft + radiansRight) * (WHEEL_RADIUS / 2);  // this averages left and right
     double deltaHeading = (radiansRight - radiansLeft) * (WHEEL_RADIUS / AXLE_LENGTH);
     double midHeading = position.a + deltaHeading / 2;  // estimate of heading 1/2 way through the sample period
@@ -55,9 +57,11 @@ void positionUpdate(unsigned long now) {
         sumRight += sample->right;
     }
     if (sumMillis > 0) {
-        double speedLeft = sumLeft * (TICKS_TO_RADIANS * MILLIS_PER_SECOND / (double) sumMillis);
-        double speedRight = sumRight * (TICKS_TO_RADIANS * MILLIS_PER_SECOND / (double) sumMillis);
+        double speedLeft = sumLeft * (RADIANS_PER_TICK * MILLIS_PER_SECOND / (double) sumMillis);  // radians/second
+        double speedRight = sumRight * (RADIANS_PER_TICK * MILLIS_PER_SECOND / (double) sumMillis);
         position.v = (speedLeft + speedRight) * (WHEEL_RADIUS / 2);
         position.w = (speedRight - speedLeft) * (WHEEL_RADIUS / AXLE_LENGTH);
+        position.leftRpm = speedLeft * (60 / M_TWOPI);
+        position.rightRpm = speedLeft * (60 / M_TWOPI);
     }
 }

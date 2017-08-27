@@ -30,6 +30,7 @@ set(CMAKE_C_STANDARD 99)
 
 set(SOURCE_FILES
         include/API.h
+        include/calibrate.h
         include/hid.h
         include/main.h
         include/motor.h
@@ -37,13 +38,14 @@ set(SOURCE_FILES
         include/ports.h
         include/tracking.h
         src/auto.c
+        src/calibrate.c
         src/hid.c
         src/init.c
         src/motor.c
         src/opcontrol.c
         src/pi.c
         src/tracking.c
-)
+        )
 
 include_directories(include)
 
