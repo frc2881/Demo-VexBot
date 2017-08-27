@@ -1,9 +1,12 @@
+/** @file hid.c
+ * @brief Human Input Device (HID) helper routines
+ *
+ * Manages a stable snapshot of the current state of the human input devices (the controllers and lcd buttons).
+ * Adds change flags and tracks last changed timestamps for detecting button changes etc.
+ */
+
 #ifndef input_h
 #define input_h
-
-//
-// Human Interface Device (HID) helper routines
-//
 
 typedef struct {
     bool pressed;
@@ -38,13 +41,13 @@ typedef struct {
     // Joystick internal gyro (tilt forward/back, left/right)
     Joystick accel;
     // Button group 5
-    ButtonGroup2 leftButtons2;
+    ButtonGroup2 leftTrigger;
     // Button group 6
-    ButtonGroup2 rightButtons2;
+    ButtonGroup2 rightTrigger;
     // Button group 7
-    ButtonGroup4 leftButtons4;
+    ButtonGroup4 leftButtons;
     // Button group 8
-    ButtonGroup4 rightButtons4;
+    ButtonGroup4 rightButtons;
     // Time in millis when a controller value changed (except accelerometer)
     unsigned long lastChangedTime;
 } Controller;

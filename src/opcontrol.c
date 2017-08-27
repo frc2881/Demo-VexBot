@@ -11,23 +11,18 @@
  */
 
 #include <API.h>
-#include <input.h>
+#include <hid.h>
 #include "main.h"
 #include "motor.h"
-
-/* Motor output mappings */
-#define MOTOR_LEFT_F 1
-#define MOTOR_LEFT_R 2
-#define MOTOR_CLAW 6
-#define MOTOR_ARM 7
-#define MOTOR_RIGHT_F 10
-#define MOTOR_RIGHT_R 9
+#include "ports.h"
 
 #define CONTROL_TANK 0
 #define CONTROL_ARCADE 1
-#define CONTROL_GRYO 2
+#define CONTROL_ACCEL 2
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
+
+#define SLEEP_MILLIS 20
 
 int chooseControlMode();
 
@@ -48,7 +43,6 @@ void debugUpdate();
 void debugPrintState();
 
 void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick,
-               Ultrasonic sonarLeft, Ultrasonic sonarRight,
                unsigned long sleptAt, unsigned long now);
 
 static short s_debugCounter = 0;
@@ -107,7 +101,7 @@ void operatorControl() {
         // What chassis control algorithm has the user selected?
         int controlMode = chooseControlMode();
 
-        if (joystick->leftButtons4.up.pressed) {
+        if (joystick->leftButtons.up.pressed) {
             // Override, when pressed use joysticks to control mechanisms
             mechArmAnalog(joystick->right.vert);
             mechClawAnalog(joystick->left.vert);
@@ -120,23 +114,27 @@ void operatorControl() {
             } else {
                 arcadeDrive(joystick->accel.vert, joystick->accel.horz);
             }
-            mechArm(joystick->rightButtons2.up.pressed, joystick->rightButtons2.down.pressed);
-            mechClaw(joystick->leftButtons2.up.pressed, joystick->leftButtons2.down.pressed);
+            mechArm(joystick->rightTrigger.up.pressed, joystick->rightTrigger.down.pressed);
+            mechClaw(joystick->leftTrigger.up.pressed, joystick->leftTrigger.down.pressed);
         }
 
         // Experimental pneumatics
-//        digitalWrite(1, joystick->rightButtons4.left.pressed);
+//        digitalWrite(1, joystick->rightButtons.left.pressed);
 
-        smartMotorSlewEnabled(!joystick->rightButtons4.up.pressed);
+        // Disable smart motor slew control with a button press
+        smartMotorSlewEnabled(!joystick->rightButtons.up.pressed);
+
+        // Apply desired drive settings to all motors
         smartMotorUpdate();
 
-//        lcdUpdate(lcdInput, joystick, sonarLeft, sonarRight, sleptAt, now);
+        // Show status
+//        lcdUpdate(lcdInput, joystick, sleptAt, now);
 
         debugUpdate();
 
-        // Sleep for a while, give other tasks a chance t orun
+        // Sleep for a while, give other tasks a chance to run
         sleptAt = millis();
-        taskDelayUntil(&previousWakeTime, 20);
+        taskDelayUntil(&previousWakeTime, SLEEP_MILLIS);
     }
 }
 
@@ -176,9 +174,9 @@ void mechClawAnalog(int speed) {
 }
 
 int chooseControlMode() {
-    static int s_controlMode = 0;
+    static int s_controlMode = CONTROL_TANK;
     // button '8 down' cycles through control modes on button up
-    if (hidController(1)->rightButtons4.down.changed == 1) {
+    if (hidController(1)->rightButtons.down.changed == 1) {
         s_controlMode = (s_controlMode + 1) % 3;
     }
     return s_controlMode;
@@ -186,13 +184,13 @@ int chooseControlMode() {
 
 void debugUpdate() {
     Controller *master = hidController(1);
-    if (master->leftButtons4.up.changed == 1 && s_debugInterval > 1) {
+    if (master->leftButtons.up.changed == 1 && s_debugInterval > 1) {
         s_debugInterval--;
     }
-    if (master->leftButtons4.down.changed == 1) {
+    if (master->leftButtons.down.changed == 1) {
         s_debugInterval++;
     }
-    if (++s_debugCounter >= s_debugInterval && master->leftButtons4.left.pressed) {
+    if (++s_debugCounter >= s_debugInterval && master->leftButtons.left.pressed) {
         debugPrintState();
         s_debugCounter = 0;
     }
@@ -246,7 +244,6 @@ void debugPrintState() {
 
 // Update the LCD (2 lines x 16 characters)
 void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick,
-               Ultrasonic sonarLeft, Ultrasonic sonarRight,
                unsigned long sleptAt, unsigned long now) {
 
     if (now - lcdInput->lastChangedTime < 3000) {
@@ -255,13 +252,6 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick,
         // LCD L=0 M=1 R=1
         lcdPrint(uart1, 1, "LCD:  %c %c %c", lcdInput->left.pressed ? 'L' : ' ',
                  lcdInput->center.pressed ? 'M' : ' ', lcdInput->right.pressed ? 'R' : ' ');
-    } else {
-        // Show ultrasonic left & right
-        // 0123456789abcdef
-        // L=200  R=200
-        int distLeft = ultrasonicGet(sonarLeft);
-        int distRight = ultrasonicGet(sonarRight);
-        lcdPrint(uart1, 1, "L=%3d  R=%3d", distLeft, distRight);
     }
 
     // 0123456789abcdef

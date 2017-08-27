@@ -33,14 +33,12 @@ set(SOURCE_FILES
         include/hid.h
         include/main.h
         include/motor.h
-        include/pi.h
         include/ports.h
         src/auto.c
-        src/init.c
         src/hid.c
+        src/init.c
         src/motor.c
-        src/opcontrol.c
-        src/pi.c)
+        src/opcontrol.c)
 
 include_directories(include)
 
