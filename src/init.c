@@ -15,6 +15,7 @@
 #include "motor.h"
 #include "ports.h"
 
+// All sensors are declared here since this is where they're initialized
 Gyro gyro;
 Encoder encoderLeft;
 Encoder encoderRight;

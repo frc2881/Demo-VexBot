@@ -10,13 +10,13 @@
  * obtained from http://sourceforge.net/projects/freertos/files/ or on request.
  */
 
-#include <API.h>
-#include <hid.h>
 #include <math.h>
 #include <string.h>
 #include "main.h"
+#include "hid.h"
 #include "motor.h"
 #include "ports.h"
+#include "tracking.h"
 
 #define CONTROL_TANK 0
 #define CONTROL_ARCADE 1
@@ -42,35 +42,6 @@ void ledUpdate(unsigned long now);
 void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, int controlMode,
                unsigned long sleptAt, unsigned long now);
 
-#define WHEEL_RADIUS 4      // inches
-#define AXLE_LENGTH 10.25   // inches
-#define TICKS_TO_RADIANS (M_TWOPI/360)
-#define VELOCITY_SAMPLES 4
-
-#define RADIANS_TO_DEGREES (360/M_TWOPI)
-#define MILLIS_PER_SECOND 1000
-
-typedef struct {
-    unsigned long millis;
-    int left;
-    int right;
-} TickDelta;
-
-typedef struct {
-    unsigned long time;
-    int left;
-    int right;
-    double x;
-    double y;
-    double a;  // current heading (radians)
-    double v;  // forward velocity
-    double w;  // rate of rotation counter-clockwise (radians/s)
-    int deltaPos;
-    TickDelta deltaHistory[VELOCITY_SAMPLES];
-} Position;
-
-static Position position;
-
 static short s_debugCounter = 0;
 static short s_debugInterval = 25;
 
@@ -95,56 +66,6 @@ static char _spinnerChars[] = "-\\|/";
  */
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wmissing-noreturn"
-
-void positionUpdate(unsigned long now) {
-    int left = encoderGet(encoderLeft);
-    int right = encoderGet(encoderRight);
-
-    // Calculate change vs. the last time
-    TickDelta* delta = &position.deltaHistory[position.deltaPos];
-    position.deltaPos = (position.deltaPos + 1) % VELOCITY_SAMPLES;
-    if (position.time != 0) {
-        delta->millis = now - position.time;
-        delta->left = left - position.left;
-        delta->right = right - position.right;
-    }
-    position.time = now;
-    position.left = left;
-    position.right = right;
-
-    if (abs(delta->left) > 360 || abs(delta->right) > 360) {
-        return;  // ignore bad data due to encoder resets etc.
-    }
-
-    // Update our estimate of our position and heading
-    double radiansLeft = delta->left * TICKS_TO_RADIANS;
-    double radiansRight = delta->right * TICKS_TO_RADIANS;
-    double deltaPosition = (radiansLeft + radiansRight) * (WHEEL_RADIUS / 2);  // this averages left and right
-    double deltaHeading = (radiansRight - radiansLeft) * (WHEEL_RADIUS / AXLE_LENGTH);
-    double midHeading = position.a + deltaHeading / 2;  // estimate of heading 1/2 way through the sample period
-    position.x += deltaPosition * cos(midHeading);
-    position.y += deltaPosition * sin(midHeading);
-    position.a = fmod(position.a + deltaHeading + M_TWOPI, M_TWOPI);
-
-    // Update our estimate of our velocity by averaging across the last few updates
-    unsigned long sumMillis = 0;
-    int sumLeft = 0, sumRight = 0;
-    for (int i = 0; i < VELOCITY_SAMPLES; i++) {
-        TickDelta* sample = &position.deltaHistory[i];
-        if (abs(sample->left) > 360 || abs(sample->right) > 360) {
-            continue;  // ignore bad data due to encoder resets etc.
-        }
-        sumMillis += sample->millis;
-        sumLeft += sample->left;
-        sumRight += sample->right;
-    }
-    if (sumMillis > 0) {
-        double speedLeft = sumLeft * (TICKS_TO_RADIANS * MILLIS_PER_SECOND / (double) sumMillis);
-        double speedRight = sumRight * (TICKS_TO_RADIANS * MILLIS_PER_SECOND / (double) sumMillis);
-        position.v = (speedLeft + speedRight) * (WHEEL_RADIUS / 2);
-        position.w = (speedRight - speedLeft) * (WHEEL_RADIUS / AXLE_LENGTH);
-    }
-}
 
 void operatorControl() {
     // Initialize input from Joystick 1 (and optionally LCD 1 buttons)
@@ -327,13 +248,14 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, int control
             // Position
             // Heading Speed  /
             snprintf(line1, 17, "Position");
-            snprintf(line2, 17, "Heading RPM");
+            snprintf(line2, 17, "Heading, RPM");
         } else {
             // 0123456789abcdef
             // X+123.4 Y-123.4
             // A+123.4 V-123.4
+            double rpm = position.v * 60 / (M_TWOPI * WHEEL_RADIUS);  // convert inch/second to rotation/minute
             snprintf(line1, 17, "X%+4.1f Y%+4.1f", position.x, position.y);
-            snprintf(line2, 17, "A%+4.1f V%+4.1f", position.a * RADIANS_TO_DEGREES, position.v / WHEEL_RADIUS * 30);
+            snprintf(line2, 17, "A%+4.1f V%+4.1f", position.a * RADIANS_TO_DEGREES, rpm);
         }
 
     } else if (displayMode == ++n) {

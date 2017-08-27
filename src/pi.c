@@ -76,9 +76,9 @@ static void piLoop(void *params) {
 }
 #pragma clang diagnostic pop
 
-void piRead(char *str, int num, FILE *stream) {
+void piRead(char *str, int num, FILE *uart) {
     char *ptr = str;
-    for (int ch; num > 1 && (ch = fgetc(stream)) != EOF && ch != '\n' && ch != '\r'; num--) {
+    for (int ch; num > 1 && (ch = fgetc(uart)) != EOF && ch != '\n' && ch != '\r'; num--) {
         *ptr++ = ch;
     }
     *ptr = '\0';

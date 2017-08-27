@@ -35,12 +35,15 @@ set(SOURCE_FILES
         include/motor.h
         include/pi.h
         include/ports.h
+        include/tracking.h
         src/auto.c
-        src/init.c
         src/hid.c
+        src/init.c
         src/motor.c
         src/opcontrol.c
-        src/pi.c)
+        src/pi.c
+        src/tracking.c
+)
 
 include_directories(include)
 

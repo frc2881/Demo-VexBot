@@ -1,4 +1,4 @@
-/** @file ports.c
+/** @file ports.h
  * @brief Robot Input/Output Port Mappings
  *
  * Defines all the ports currently in use on the robot.
