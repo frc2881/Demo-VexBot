@@ -17,7 +17,7 @@ void calibrationInit() {
 }
 
 void calibrationStart(CalibrationMode mode) {
-    printf("Beginning MotorRpm calibration...");
+    printf("Beginning MotorRpm calibration...\n");
     calibration.mode = mode;
     calibration.nextAt = 0;
     // The first call to calibrationUpdate() will get things rolling
@@ -31,7 +31,7 @@ void calibrationUpdate(unsigned long now) {
 
 void calibrationEnd() {
     if (calibration.mode != CALIBRATE_NONE) {
-        printf("Ending MotorRpm calibration...");
+        printf("Ending MotorRpm calibration...\n");
         calibration.mode = CALIBRATE_NONE;
         smartMotorSlewEnabled(true);  // restore settings
         smartMotorStopAll();

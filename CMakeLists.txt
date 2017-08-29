@@ -17,7 +17,7 @@
 #    Target:                output.elf
 #    Configuration:         MinSizeRel
 #    Executable:            /usr/local/bin/pros
-#    Program Arguments:     flash -f project-cmake.pros
+#    Program Arguments:     flash -b cmake-build-minsizerel/output.bin
 #    Working Directory:     $PROJECT_DIR$
 # - Click OK
 # This should add a "Deploy to Robot" option to the toolbar.  Click the green arrow next to it to build and deploy.

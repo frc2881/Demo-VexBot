@@ -109,8 +109,13 @@ void operatorControl() {
             } else {
                 arcadeDrive(joystick->accel.vert, joystick->accel.horz);
             }
+
+            bool flashlightOn = joystick->leftTrigger.up.pressed || joystick->rightTrigger.up.pressed;
+            smartMotorSet(MOTOR_FLASHLIGHT, flashlightOn ? 127 : 0);
+
             // Experimental pneumatics
 //            digitalWrite(1, joystick->rightButtons.left.pressed);
+
         } else {
             // Some form of semi-autonomous control
             calibrationUpdate(now);
