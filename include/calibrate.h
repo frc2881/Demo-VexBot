@@ -13,6 +13,7 @@ typedef struct {
     unsigned long nextAt;
     unsigned char channel;
     short input;
+    short direction;
     double lastRpm;
 } Calibration;
 

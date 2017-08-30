@@ -3,7 +3,6 @@
  */
 
 #include "calibrate.h"
-#include "main.h"
 #include "motor.h"
 #include "ports.h"
 #include "tracking.h"
@@ -32,8 +31,11 @@ void calibrationUpdate(unsigned long now) {
 void calibrationEnd() {
     if (calibration.mode != CALIBRATE_NONE) {
         printf("Ending MotorRpm calibration...\n");
+        // Restore settings
         calibration.mode = CALIBRATE_NONE;
-        smartMotorSlewEnabled(true);  // restore settings
+        smartMotorEnabled(true);
+        smartMotorSlew(MOTOR_LEFT_R, 0.75, 100);
+        smartMotorSlew(MOTOR_RIGHT_R, 0.75, 100);
         smartMotorStopAll();
     }
 }
@@ -41,11 +43,14 @@ void calibrationEnd() {
 void calibrateMotorRpm(unsigned long now) {
     if (calibration.nextAt == 0) {
         // Initial setup
-        smartMotorSlewEnabled(false);
+        smartMotorEnabled(false);
+        smartMotorSlew(MOTOR_LEFT_R, 100, 100);
+        smartMotorSlew(MOTOR_RIGHT_R, 100, 100);
         smartMotorStopAll();
         calibration.channel = MOTOR_LEFT_R;
-        calibration.input = 0;
-        calibration.lastRpm = 0;
+        calibration.input = -127;
+        calibration.direction = 1;
+        calibration.lastRpm = 9999;
 
     } else if (now < calibration.nextAt) {
         // Wait for the test to stabilize
@@ -63,29 +68,32 @@ void calibrateMotorRpm(unsigned long now) {
         }
 
         // Stabilized.  Measure and report the RPM.
-        printf("{\"test\":\"MotorRpm%s\", \"voltage\":%d, \"input\":%d, \"output\":%.3f}\n",
-               leftSide ? "Left" : "Right", powerLevelMain(), calibration.input, rpm);
+        printf("{\"test\":\"MotorRpm%s%s\", \"voltage\":%d, \"input\":%d, \"output\":%.3f, \"raw\":%d}\n",
+               (leftSide ? "Left" : "Right"), (calibration.direction > 0 ? "Up" : "Down"),
+               powerLevelMain(), calibration.input, rpm, motorGet(calibration.channel));
 
         // Advance to the next stage of this test
-        if (calibration.input == -127) {
-            if (calibration.channel == MOTOR_LEFT_R) {
+        if (calibration.direction > 0) {
+            if (calibration.input < 127) {
+                calibration.input++;
+            } else {
+                calibration.direction = -1;
+            }
+        } else {
+            if (calibration.input > -127) {
+                calibration.input--;
+            } else if (calibration.channel == MOTOR_LEFT_R) {
                 smartMotorSet(MOTOR_LEFT_R, 0);
                 calibration.channel = MOTOR_RIGHT_R;
-                calibration.input = 0;
-                calibration.lastRpm = 0;
+                calibration.input = -127;
+                calibration.direction = 1;
+                calibration.lastRpm = 9999;
             } else {
                 calibrationEnd();
                 return;
             }
-        } else if (calibration.input == 127) {
-            calibration.input = -2;
-        } else if (calibration.input >= 0) {
-            calibration.input = MIN(calibration.input + 2, 127);
-        } else {
-            calibration.input = MAX(calibration.input - 2, -127);
         }
     }
-
     smartMotorSet(calibration.channel, calibration.input);
-    calibration.nextAt = now + 80;
+    calibration.nextAt = now + 100;
 }

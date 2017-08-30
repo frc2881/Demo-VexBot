@@ -11,7 +11,7 @@ void smartMotorSet(unsigned char channel, short speed);
 void smartMotorStopAll();
 
 // Settings
-void smartMotorSlewEnabled(bool flag);
+void smartMotorEnabled(bool flag);
 void smartMotorSlew(unsigned char channel, float up, float down);
 void smartMotorReversed(unsigned char channel, bool reversed);
 
