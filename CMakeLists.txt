@@ -17,7 +17,7 @@
 #    Target:                output.elf
 #    Configuration:         MinSizeRel
 #    Executable:            /usr/local/bin/pros
-#    Program Arguments:     flash -f project-cmake.pros
+#    Program Arguments:     flash -b cmake-build-minsizerel/output.bin
 #    Working Directory:     $PROJECT_DIR$
 # - Click OK
 # This should add a "Deploy to Robot" option to the toolbar.  Click the green arrow next to it to build and deploy.
@@ -44,7 +44,7 @@ include_directories(include)
 
 add_executable(output.elf ${SOURCE_FILES})
 
-target_link_libraries(output.elf m)
+target_link_libraries(output.elf ${FIRMWARE_ROOT}/libpros.a m)
 
 add_custom_command(TARGET output.elf POST_BUILD
         COMMAND ${GCC_ARM_ROOT}/bin/arm-none-eabi-size output.elf
