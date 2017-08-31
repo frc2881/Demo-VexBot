@@ -31,8 +31,8 @@ typedef struct {
     double a;   // current heading (radians)
     double v;   // forward velocity (inches/second)
     double w;   // rate of turning left (positive) or right (negative) (radians/second)
-    double leftRpm;
-    double rightRpm;
+    double vLeft;
+    double vRight;
     TickDelta deltaHistory[VELOCITY_SAMPLES];  // recent history of tick count measurements (ring buffer)
     int deltaPos;                              // index of 'deltaHistory' containing the most recent
 } Position;

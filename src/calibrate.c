@@ -2,6 +2,7 @@
  * @brief Utilities for measuring things on the robot
  */
 
+#include <math.h>
 #include "calibrate.h"
 #include "motor.h"
 #include "ports.h"
@@ -50,7 +51,7 @@ void calibrateMotorRpm(unsigned long now) {
         calibration.channel = MOTOR_LEFT_R;
         calibration.input = -127;
         calibration.direction = 1;
-        calibration.lastRpm = 9999;
+        calibration.lastSpeed = 9999;
 
     } else if (now < calibration.nextAt) {
         // Wait for the test to stabilize
@@ -60,14 +61,15 @@ void calibrateMotorRpm(unsigned long now) {
         bool leftSide = (calibration.channel == MOTOR_LEFT_R);
 
         // We've given the wheel time to respond.  Is the velocity measurement stable?
-        double rpm = leftSide ? position.leftRpm : position.rightRpm;
-        double rpmChange = rpm - calibration.lastRpm;
-        calibration.lastRpm = rpm;
-        if (abs(rpmChange) > 0.1) {
+        double speed = leftSide ? position.vLeft : position.vRight;
+        double speedChange = speed - calibration.lastSpeed;
+        calibration.lastSpeed = speed;
+        if (abs(speedChange) > 0.1) {
             return;  // Keep waiting for it to stabilize
         }
 
         // Stabilized.  Measure and report the RPM.
+        double rpm = speed * (60 / (WHEEL_RADIUS * M_TWOPI));  // converts inches/second to RPM
         printf("{\"test\":\"MotorRpm%s%s\", \"voltage\":%d, \"input\":%d, \"output\":%.3f, \"raw\":%d}\n",
                (leftSide ? "Left" : "Right"), (calibration.direction > 0 ? "Up" : "Down"),
                powerLevelMain(), calibration.input, rpm, motorGet(calibration.channel));
@@ -87,7 +89,7 @@ void calibrateMotorRpm(unsigned long now) {
                 calibration.channel = MOTOR_RIGHT_R;
                 calibration.input = -127;
                 calibration.direction = 1;
-                calibration.lastRpm = 9999;
+                calibration.lastSpeed = 9999;
             } else {
                 calibrationEnd();
                 return;

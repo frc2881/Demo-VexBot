@@ -29,7 +29,7 @@ void smartMotorInit() {
         m->desired = 0;
         m->actual = 0;
         m->slewUp = 0.75;   // 0.75*20 millis = 15 points per typical interval, roughly 100 millis from 0 to full power
-        m->slewDown = 100;  // really large, basically disables skew for decreases in input power
+        m->slewDown = 2;    // power ramps down faster than it ramps up
         m->scale = 1;
     }
 }

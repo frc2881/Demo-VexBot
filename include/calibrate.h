@@ -14,7 +14,7 @@ typedef struct {
     unsigned char channel;
     short input;
     short direction;
-    double lastRpm;
+    double lastSpeed;
 } Calibration;
 
 extern Calibration calibration;

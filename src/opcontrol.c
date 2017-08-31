@@ -31,19 +31,19 @@ typedef enum {
 DriveMode chooseDriveMode();
 
 void tankDrive(int left, int right, bool squared);
-void arcadeDrive(int power, int turnCC);
-void constantRadiusDrive(int power, int turnCC);
+void arcadeDrive(int power, int turn);
+void constantRadiusDrive(int power, int turn);
 
 void debugUpdate();
 void debugPrintState();
 
 void ledUpdate(unsigned long now);
 
-void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode controlMode,
+void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode driveMode,
                unsigned long sleptAt, unsigned long now);
 
-static short s_debugCounter = 0;
-static short s_debugInterval = 25;
+static short _debugCounter = 0;
+static short _debugInterval = 25;
 
 static char _spinnerChars[] = "-\\|/";
 
@@ -75,6 +75,8 @@ void operatorControl() {
 
     calibrationInit();
 
+    bool underAutopilotControl = false;
+
     unsigned long previousWakeTime = millis();
     unsigned long sleptAt = millis();
     while (true) {
@@ -86,49 +88,76 @@ void operatorControl() {
         // Update controller inputs
         hidUpdate(now);
 
-        if (joystick->rightButtons.up.changed == -1) {
+        if (joystick->leftButtons.down.changed == -1) {
+            // Turn around 180 degrees and reverse course
+            trackingSetDriveWaypoint(position.x, position.y, position.a + M_PI, position.v, 0);
+            underAutopilotControl = true;
+
+        } else if (joystick->leftButtons.left.changed == -1) {
+            // Turn left 90 degrees (and go to what location?)
+            trackingSetDriveWaypoint(position.x, position.y, position.a + M_PI_2, position.v, 0);
+            underAutopilotControl = true;
+
+        } else if (joystick->leftButtons.right.changed == -1) {
+            // Turn right 90 degrees (and go to what location?)
+            trackingSetDriveWaypoint(position.x, position.y, position.a - M_PI_2, position.v, 0);
+            underAutopilotControl = true;
+
+        } else if (joystick->leftButtons.up.changed == -1) {
+            // Turn around 180 degrees while continuing in the same direction
+            trackingSetDriveWaypoint(position.x, position.y, position.a + M_PI, -position.v, 0);
+            underAutopilotControl = true;
+
+        } else if (joystick->rightButtons.up.changed == -1) {
             calibrationStart(CALIBRATE_MOTOR_RPM);
+            underAutopilotControl = false;
+
         } else if (joystick->lastChangedTime == now) {
             // Any joystick input cancels semi-autonomous tasks
+            underAutopilotControl = false;
             calibrationEnd();
         }
 
         // What chassis control algorithm has the user selected?
-        DriveMode controlMode = chooseDriveMode();
+        DriveMode driveMode = chooseDriveMode();
 
         // Is the robot running a semi-autonomous task or under user control?
-        bool underUserControl = (calibration.mode == CALIBRATE_NONE);
+        if (underAutopilotControl) {
+            trackingDriveToTarget();
 
-        if (underUserControl) {
+        } else if (calibration.mode != CALIBRATE_NONE) {
+            // Debugging/calibration
+            calibrationUpdate(now);
+
+        } else {
             // Use joysticks to control drive train
             bool squared = joystick->rightButtons.right.pressed;
-            if (controlMode == DRIVE_TANK) {
+            if (driveMode == DRIVE_TANK) {
                 tankDrive(joystick->left.vert, joystick->right.vert, squared);
-            } else if (controlMode == DRIVE_ARCADE) {
+
+            } else if (driveMode == DRIVE_ARCADE) {
                 arcadeDrive(joystick->right.vert, joystick->left.horz);
-            } else if (controlMode == DRIVE_CONSTANT_RADIUS) {
-                constantRadiusDrive(joystick->accel.vert, joystick->accel.horz);
-            } else if (controlMode == DRIVE_ACCELEROMETER) {
+
+            } else if (driveMode == DRIVE_CONSTANT_RADIUS) {
+                constantRadiusDrive(joystick->right.vert, joystick->left.horz);
+
+            } else if (driveMode == DRIVE_ACCELEROMETER) {
                 arcadeDrive(joystick->accel.vert, joystick->accel.horz);
             }
 
-            bool flashlightOn = joystick->leftTrigger.up.pressed || joystick->rightTrigger.up.pressed;
-            smartMotorSet(MOTOR_FLASHLIGHT, flashlightOn ? 127 : 0);
-
             // Experimental pneumatics
 //            digitalWrite(1, joystick->rightButtons.left.pressed);
-
-        } else {
-            // Some form of semi-autonomous control
-            calibrationUpdate(now);
         }
+
+        bool flashlightOn = joystick->leftTrigger.up.pressed || joystick->rightTrigger.up.pressed;
+        smartMotorSet(MOTOR_FLASHLIGHT, flashlightOn ? 127 : 0);
 
         // Apply desired drive settings to all motors
         smartMotorUpdate();
 
         // Show status
         ledUpdate(now);
-        lcdUpdate(lcdInput, joystick, controlMode, sleptAt, now);
+        lcdUpdate(lcdInput, joystick, driveMode, sleptAt, now);
         debugUpdate();
 
         // Sleep for a while, give other tasks a chance to run
@@ -139,13 +168,13 @@ void operatorControl() {
 #pragma clang diagnostic pop
 
 /*
- * Drives the chassis.  A positive 'turnCC' argument turns clockwise.
+ * Drives the chassis.  A positive 'turn' argument turns clockwise.
  */
-void arcadeDrive(int power, int turnCC) {
-    smartMotorSet(MOTOR_LEFT_F, power + turnCC);  // set left-front wheel(s)
-    smartMotorSet(MOTOR_LEFT_R, power + turnCC);  // set left-rear wheel(s)
-    smartMotorSet(MOTOR_RIGHT_F, power - turnCC);  // set right wheel(s)
-    smartMotorSet(MOTOR_RIGHT_R, power - turnCC);  // set right wheel(s)
+void arcadeDrive(int power, int turn) {
+    smartMotorSet(MOTOR_LEFT_F, power + turn);  // set left-front wheel(s)
+    smartMotorSet(MOTOR_LEFT_R, power + turn);  // set left-rear wheel(s)
+    smartMotorSet(MOTOR_RIGHT_F, power - turn);  // set right wheel(s)
+    smartMotorSet(MOTOR_RIGHT_R, power - turn);  // set right wheel(s)
 }
 
 void tankDrive(int left, int right, bool squared) {
@@ -159,12 +188,13 @@ void tankDrive(int left, int right, bool squared) {
     smartMotorSet(MOTOR_RIGHT_R, right);  // set right wheel(s)
 }
 
-void constantRadiusDrive(int power, int turnCC) {
-    // Map 'turnCC' to a value between -1 and 1 corresponding to the ratio of inner/outer wheel in the turn
-    float ratio = 1 - (2 * turnCC * turnCC / (float) (127 * 127));  // -1.0 <= ratio <= 1.0
+void constantRadiusDrive(int power, int turn) {
+    // Map 'turn' to a value between -1 and 1 corresponding to the ratio of inner/outer wheel in the turn
+    float scaled = turn * turn / (float) (127 * 127);  // 0 <= scaled <= 1.0, squaring flattens initial input response
+    float ratio = 1 - (2 * scaled);  // -1.0 <= ratio <= 1.0; turn==0 => ratio=1; turn==127 => ratio=-1
     int inner = lroundf(power * ratio);
-    int left = (turnCC >= 0) ? inner : power;
-    int right = (turnCC >= 0) ? power : inner;
+    int left = (turn >= 0) ? power : inner;
+    int right = (turn >= 0) ? inner : power;
     smartMotorSet(MOTOR_LEFT_F, left);  // set left-front wheel(s)
     smartMotorSet(MOTOR_LEFT_R, left);  // set left-rear wheel(s)
     smartMotorSet(MOTOR_RIGHT_F, right);  // set right wheel(s)
@@ -172,32 +202,32 @@ void constantRadiusDrive(int power, int turnCC) {
 }
 
 DriveMode chooseDriveMode() {
-    static DriveMode s_controlMode = DRIVE_TANK;
+    static DriveMode _driveMode = DRIVE_TANK;
     // button '8 down' cycles through control modes on button up
     if (hidController(1)->rightButtons.down.changed == 1) {
-        s_controlMode = (s_controlMode + 1) % 4;
+        _driveMode = (_driveMode + 1) % 4;
     }
-    return s_controlMode;
+    return _driveMode;
 }
 
 void debugUpdate() {
     Controller *master = hidController(1);
-    if (master->leftButtons.up.changed == 1 && s_debugInterval > 1) {
-        s_debugInterval--;
+    if (master->leftButtons.up.changed == 1 && _debugInterval > 1) {
+        _debugInterval--;
     }
     if (master->leftButtons.down.changed == 1) {
-        s_debugInterval++;
+        _debugInterval++;
     }
-    if (++s_debugCounter >= s_debugInterval && master->leftButtons.left.pressed) {
+    if (++_debugCounter >= _debugInterval && master->leftButtons.left.pressed) {
         debugPrintState();
-        s_debugCounter = 0;
+        _debugCounter = 0;
     }
 }
 
 void debugPrintState() {
     Controller *master = hidController(1);
 
-    // printf("debug: %d  clock: %x\n", s_debugInterval, (int) millis());
+    // printf("debug: %d  clock: %x\n", _debugInterval, (int) millis());
     // printf("turn-cc: %d\n", master->right.horz);
 
     // int battery = powerLevelMain();
@@ -242,18 +272,18 @@ void debugPrintState() {
 
 // Toggle the LED indicator to prove that we haven't crashed
 void ledUpdate(unsigned long now) {
-    static unsigned long toggleIndicatorAt;
-    if (toggleIndicatorAt == 0 || now >= toggleIndicatorAt) {
+    static unsigned long _toggleIndicatorAt;
+    if (_toggleIndicatorAt == 0 || now >= _toggleIndicatorAt) {
         digitalWrite(LED_GREEN, digitalRead(LED_GREEN) ? LOW : HIGH);
-        toggleIndicatorAt = now + 500;
+        _toggleIndicatorAt = now + 500;
     }
 }
 
 // Update the LCD (2 lines x 16 characters)
-void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode controlMode,
+void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode driveMode,
                unsigned long sleptAt, unsigned long now) {
-    static int displayMode = 1;  // TODO
-    static unsigned long tempExpiresAt;
+    static int _displayMode = 0;
+    static unsigned long _tempExpiresAt;
 
     unsigned int secSinceChange = (unsigned int) ((now - MAX(joystick->lastChangedTime, lcdInput->lastChangedTime)) / 1000);
 
@@ -263,8 +293,8 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode c
 
     // Left LCD button cycles through the display modes
     if (lcdInput->left.changed == 1) {
-        displayMode = (displayMode + 1) % 6;
-        tempExpiresAt = now + 1000;
+        _displayMode = (_displayMode + 1) % 6;
+        _tempExpiresAt = now + 1000;
     }
     char line1[17] = "", line2[17] = "";
     int n = -1;
@@ -273,19 +303,19 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode c
         // IN= -123   V=7.2
         // OUT=-123.234
         snprintf(line1, 17, "IN= %-4d   V=%.1f", calibration.input, powerLevelMain() / 1000.0);
-        snprintf(line2, 17, "OUT=%-.3f", calibration.lastRpm);
+        snprintf(line2, 17, "OUT=%-.3f", calibration.lastSpeed);
 
-    } else if (displayMode == ++n) {
+    } else if (_displayMode == ++n) {
         // 0123456789abcdef
         // ARCADE DRIVE
         // CONSTANT RADIUS
         // CPU=20 IDLE=99 /
         char* modeString;
-        if (controlMode == DRIVE_TANK) {
+        if (driveMode == DRIVE_TANK) {
             modeString = "TANK DRIVE";
-        } else if (controlMode == DRIVE_ARCADE) {
+        } else if (driveMode == DRIVE_ARCADE) {
             modeString = "ARCADE DRIVE";
-        } else if (controlMode == DRIVE_CONSTANT_RADIUS) {
+        } else if (driveMode == DRIVE_CONSTANT_RADIUS) {
             modeString = "CONSTANT RADIUS";
         } else {
             modeString = "ACCELEROMETER";
@@ -295,9 +325,9 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode c
         snprintf(line1, 17, "%s", modeString);
         snprintf(line2, 17, "CPU=%-2d IDLE=%d", MIN(cpuUsage, 99), MIN(secSinceChange, 99));
 
-    } else if (displayMode == ++n) {
+    } else if (_displayMode == ++n) {
         // Show estimated position (inches), heading (degrees) and linear velocity (inches/sec)
-        if (now < tempExpiresAt) {
+        if (now < _tempExpiresAt) {
             //                   0123456789abcdef
             snprintf(line1, 17, "Position");
             snprintf(line2, 17, "Heading, Speed");
@@ -309,9 +339,9 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode c
             snprintf(line2, 17, "A%+4.1f V%+4.1f", position.a * DEGREES_PER_RADIAN, position.v);
         }
 
-    } else if (displayMode == ++n) {
+    } else if (_displayMode == ++n) {
         // Show estimated heading (degrees), angular velocity (degrees/sec), gyro heading (degrees)
-        if (now < tempExpiresAt) {
+        if (now < _tempExpiresAt) {
             //                   0123456789abcdef
             snprintf(line1, 17, "Heading, Turning");
             snprintf(line2, 17, "Gyro, RPM");
@@ -319,13 +349,13 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode c
             // 0123456789abcdef
             // A+123.4 W-123.4
             // G+123 RPM+123.4
-            double rpm = abs(position.leftRpm) > abs(position.rightRpm) ? position.leftRpm : position.rightRpm;
+            double speed = abs(position.vLeft) > abs(position.vRight) ? position.vLeft : position.vRight;  // faster side
             snprintf(line1, 17, "A%+4.1f W%+4.1f", position.a * DEGREES_PER_RADIAN, position.w * DEGREES_PER_RADIAN);
-            snprintf(line2, 17, "G%+4d RPM%+4.1f", gyroGet(gyro), rpm);  // RPM of the faster side
+            snprintf(line2, 17, "G%+4d RPM%+4.1f", gyroGet(gyro), speed * (60 / (WHEEL_RADIUS * M_TWOPI)));  // convert to RPM
         }
 
-    } else if (displayMode == ++n) {
-        if (now < tempExpiresAt) {
+    } else if (_displayMode == ++n) {
+        if (now < _tempExpiresAt) {
             //                   0123456789abcdef
             snprintf(line1, 17, "Encoders");
         } else {
@@ -336,14 +366,14 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode c
             snprintf(line2, 17, "Right= %-+6d", encoderGet(encoderRight));
         }
 
-    } else if (displayMode == ++n) {
+    } else if (_displayMode == ++n) {
         bool bumperLeft = digitalRead(BUMPER_LEFT);
         bool bumperRight = digitalRead(BUMPER_RIGHT);
         snprintf(line1, 17, "Bumpers");
         snprintf(line2, 17, "L=%d R=%d", bumperLeft, bumperRight);
 
-    } else if (displayMode == ++n) {
-        if (now < tempExpiresAt) {
+    } else if (_displayMode == ++n) {
+        if (now < _tempExpiresAt) {
             snprintf(line1, 17, "Battery Levels");
         } else {
             // 0123456789abcdef

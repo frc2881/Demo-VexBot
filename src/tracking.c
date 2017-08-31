@@ -14,7 +14,7 @@
 
 #define MILLIS_PER_SECOND 1000
 
-#define MAX_ROTATIONS_PER_MIN 175.0
+#define MAX_ROTATIONS_PER_MIN 170.0
 #define MAX_RADIANS_PER_SEC (MAX_ROTATIONS_PER_MIN * M_TWOPI / 60)
 #define MAX_LINEAR_SPEED (MAX_RADIANS_PER_SEC * WHEEL_RADIUS)                      // inches/sec
 #define MAX_TURN_SPEED (MAX_RADIANS_PER_SEC * 2 * WHEEL_RADIUS / AXLE_LENGTH)      // radians/sec
@@ -31,7 +31,7 @@ typedef struct {
 } PositionTarget;
 
 static void setChassisSpeed(double linearSpeed, double turnSpeed);
-static void setWheelSpeed(unsigned char front, unsigned char rear, double desiredRpm, double actualRpm);
+static void setWheelSpeed(unsigned char front, unsigned char rear, double desired, double actual);
 static double normalizeAngle(double rads, double min, double max);
 
 Position position;
@@ -80,37 +80,37 @@ void trackingUpdate(unsigned long now) {
         sumRight += sample->right;
     }
     if (sumMillis > 0) {
-        double speedLeft = sumLeft * (RADIANS_PER_TICK * MILLIS_PER_SECOND / (double) sumMillis);  // radians/second
-        double speedRight = sumRight * (RADIANS_PER_TICK * MILLIS_PER_SECOND / (double) sumMillis);
-        position.v = (speedLeft + speedRight) * (WHEEL_RADIUS / 2);
-        position.w = (speedRight - speedLeft) * (WHEEL_RADIUS / AXLE_LENGTH);
-        position.leftRpm = speedLeft * (60 / M_TWOPI);
-        position.rightRpm = speedRight * (60 / M_TWOPI);
+        // Convert ticks/millisecond to inches/second
+        double speedLeft = sumLeft * (RADIANS_PER_TICK * WHEEL_RADIUS * MILLIS_PER_SECOND) / (double) sumMillis;
+        double speedRight = sumRight * (RADIANS_PER_TICK * WHEEL_RADIUS * MILLIS_PER_SECOND) / (double) sumMillis;
+        position.v = (speedLeft + speedRight) / 2;
+        position.w = (speedRight - speedLeft) / AXLE_LENGTH;   // radians/second
+        position.vLeft = speedLeft;
+        position.vRight = speedRight;
     }
 }
 
 void setChassisSpeed(double linearSpeed, double turnSpeed) {
+    // Convert desired linear & turn values into tank chassis left & right
+    double left = linearSpeed + turnSpeed * AXLE_LENGTH / 2;
+    double right = linearSpeed - turnSpeed * AXLE_LENGTH / 2;
+
     // Scale down inputs to maintain curvature radius if requested speeds exceeds physical limits
-    double saturation = MAX(abs(linearSpeed) / MAX_LINEAR_SPEED, abs(turnSpeed) / MAX_TURN_SPEED);
+    double saturation = MAX(abs(left) / MAX_LINEAR_SPEED, abs(right) / MAX_LINEAR_SPEED);
     if (saturation > 1) {
-        linearSpeed /= saturation;
-        turnSpeed /= saturation;
+        left /= saturation;
+        right /= saturation;
     }
 
-    // Convert desired linear & turn values into tank chassis left & right RPM
-    double rpmFactor = (60 / (WHEEL_RADIUS * M_TWOPI));  // converts inches/second to RPM
-    double leftRpm = (linearSpeed + turnSpeed * AXLE_LENGTH / 2) * rpmFactor;
-    double rightRpm = (linearSpeed - turnSpeed * AXLE_LENGTH / 2) * rpmFactor;
-
-    setWheelSpeed(MOTOR_LEFT_F, MOTOR_LEFT_R, leftRpm, position.leftRpm);
-    setWheelSpeed(MOTOR_RIGHT_F, MOTOR_RIGHT_R, rightRpm, position.rightRpm);
+    setWheelSpeed(MOTOR_LEFT_F, MOTOR_LEFT_R, left, position.vLeft);
+    setWheelSpeed(MOTOR_RIGHT_F, MOTOR_RIGHT_R, right, position.vRight);
 }
 
-void setWheelSpeed(unsigned char front, unsigned char rear, double desiredRpm, double actualRpm) {
+void setWheelSpeed(unsigned char front, unsigned char rear, double desired, double actual) {
     // Simple P controller w/both feedforward and feedback components
-    double levelFeedforward = desiredRpm;
-    double levelFeedback = 0.1 * (desiredRpm - actualRpm);
-    int value = lround(127 * (levelFeedforward + levelFeedback) / MAX_ROTATIONS_PER_MIN);
+    double levelFeedforward = desired;
+    double levelFeedback = 0.1 * (desired - actual);
+    int value = lround(127 * (levelFeedforward + levelFeedback) / MAX_LINEAR_SPEED);
     smartMotorSet(front, value);
     smartMotorSet(rear, value);
 }
@@ -131,7 +131,7 @@ void trackingSetDriveWaypoint(double x, double y, double a, double v, double w) 
     // Set destination location, heading and velocities
     positionTarget.x = x;
     positionTarget.y = y;
-    positionTarget.a = a;
+    positionTarget.a = normalizeAngle(a, -M_PI, M_PI);
     positionTarget.v = v;
     positionTarget.w = w;
 
