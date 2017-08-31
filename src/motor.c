@@ -110,6 +110,11 @@ short smartMotorGet(unsigned char channel) {
 void smartMotorSet(unsigned char channel, short speed) {
     if (channel < 1 || channel > 10) return;
     SmartMotor *m = &_motorState[channel - 1];
+    if (speed > 127) {
+        speed = 127;
+    } else if (speed < -127) {
+        speed = -127;
+    }
     m->desired = speed * m->scale;
 }
 

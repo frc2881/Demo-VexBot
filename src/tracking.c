@@ -14,22 +14,25 @@
 
 #define MILLIS_PER_SECOND 1000
 
-#define MAX_LINEAR_SPEED 100.0
-#define MAX_ROTATION_SPEED 100.0
+#define MAX_ROTATIONS_PER_MIN 175.0
+#define MAX_RADIANS_PER_SEC (MAX_ROTATIONS_PER_MIN * M_TWOPI / 60)
+#define MAX_LINEAR_SPEED (MAX_RADIANS_PER_SEC * WHEEL_RADIUS)                      // inches/sec
+#define MAX_TURN_SPEED (MAX_RADIANS_PER_SEC * 2 * WHEEL_RADIUS / AXLE_LENGTH)      // radians/sec
 
 typedef struct {
-    double x;
-    double y;
-    double a;
-    double v;
-    double w;
+    double x;  // inches
+    double y;  // inches
+    double a;  // radians
+    double v;  // inches/sec
+    double w;  // radians/sec
     double k_1;
     double k_2_v;
     double k_3;
 } PositionTarget;
 
+static void setChassisSpeed(double linearSpeed, double turnSpeed);
+static void setWheelSpeed(unsigned char front, unsigned char rear, double desiredRpm, double actualRpm);
 static double normalizeAngle(double rads, double min, double max);
-static void setWheelSpeed(unsigned char front, unsigned char rear, double desired, double actual);
 
 Position position;
 PositionTarget positionTarget;
@@ -86,29 +89,34 @@ void trackingUpdate(unsigned long now) {
     }
 }
 
-void trackingSetSpeed(double linearSpeed, double rotationSpeed) {
+void setChassisSpeed(double linearSpeed, double turnSpeed) {
     // Scale down inputs to maintain curvature radius if requested speeds exceeds physical limits
-    double saturation = MAX(abs(linearSpeed) / MAX_LINEAR_SPEED, abs(rotationSpeed) / MAX_ROTATION_SPEED);
+    double saturation = MAX(abs(linearSpeed) / MAX_LINEAR_SPEED, abs(turnSpeed) / MAX_TURN_SPEED);
     if (saturation > 1) {
         linearSpeed /= saturation;
-        rotationSpeed /= saturation;
+        turnSpeed /= saturation;
     }
 
-    // Convert desired linear & rotation values into tank chassis left & right RPM
+    // Convert desired linear & turn values into tank chassis left & right RPM
     double rpmFactor = (60 / (WHEEL_RADIUS * M_TWOPI));  // converts inches/second to RPM
-    double leftRpm = (linearSpeed + rotationSpeed * AXLE_LENGTH / 2) * rpmFactor;
-    double rightRpm = (linearSpeed - rotationSpeed * AXLE_LENGTH / 2) * rpmFactor;
+    double leftRpm = (linearSpeed + turnSpeed * AXLE_LENGTH / 2) * rpmFactor;
+    double rightRpm = (linearSpeed - turnSpeed * AXLE_LENGTH / 2) * rpmFactor;
 
     setWheelSpeed(MOTOR_LEFT_F, MOTOR_LEFT_R, leftRpm, position.leftRpm);
     setWheelSpeed(MOTOR_RIGHT_F, MOTOR_RIGHT_R, rightRpm, position.rightRpm);
 }
 
-void setWheelSpeed(unsigned char front, unsigned char rear, double desired, double actual) {
-    double delta = (actual - desired);
-
-    int value = 0; // TODO
+void setWheelSpeed(unsigned char front, unsigned char rear, double desiredRpm, double actualRpm) {
+    // Simple P controller w/both feedforward and feedback components
+    double levelFeedforward = desiredRpm;
+    double levelFeedback = 0.1 * (desiredRpm - actualRpm);
+    int value = lround(127 * (levelFeedforward + levelFeedback) / MAX_ROTATIONS_PER_MIN);
     smartMotorSet(front, value);
     smartMotorSet(rear, value);
+}
+
+void trackingSetDriveSpeed(short forward, short turn) {
+    setChassisSpeed(forward * (MAX_LINEAR_SPEED / 127), turn * (MAX_TURN_SPEED / 127));
 }
 
 void trackingSetDriveTarget(double x, double y, double a) {
@@ -159,7 +167,10 @@ void trackingDriveToTarget() {
     double ub_v = e_1 * positionTarget.k_1;
     double ub_w = e_2 * positionTarget.k_2_v * (abs(e_3) >= 0.001 ? sin(e_3) / e_3 : 1) + e_3 * positionTarget.k_3;
 
-    trackingSetSpeed(uf_v + ub_v, uf_w + ub_w);
+    double linearSpeed = uf_v + ub_v;  // inches/sec
+    double turnSpeed = uf_w + ub_w;   // radians/sec
+
+    setChassisSpeed(linearSpeed, turnSpeed);
 }
 
 double normalizeAngle(double rads, double min, double max) {

@@ -24,17 +24,17 @@
 typedef enum {
     DRIVE_TANK,    // Left joystick controls left wheels, right joystick controls right wheels
     DRIVE_ARCADE,  // Left joystick turns, right joystick for forward & back
-    DRIVE_ACCEL,   // Controller accelerometer (tilt the controller forward & back, left & right)
+    DRIVE_CONSTANT_RADIUS,  // Left joystick sets turn radius, right joystick speed
+    DRIVE_ACCELEROMETER,    // Controller accelerometer (tilt the controller forward & back, left & right)
 } DriveMode;
 
 DriveMode chooseDriveMode();
 
-void arcadeDrive(int power, int turnCC);
-
 void tankDrive(int left, int right, bool squared);
+void arcadeDrive(int power, int turnCC);
+void constantRadiusDrive(int power, int turnCC);
 
 void debugUpdate();
-
 void debugPrintState();
 
 void ledUpdate(unsigned long now);
@@ -106,7 +106,9 @@ void operatorControl() {
                 tankDrive(joystick->left.vert, joystick->right.vert, squared);
             } else if (controlMode == DRIVE_ARCADE) {
                 arcadeDrive(joystick->right.vert, joystick->left.horz);
-            } else {
+            } else if (controlMode == DRIVE_CONSTANT_RADIUS) {
+                constantRadiusDrive(joystick->accel.vert, joystick->accel.horz);
+            } else if (controlMode == DRIVE_ACCELEROMETER) {
                 arcadeDrive(joystick->accel.vert, joystick->accel.horz);
             }
 
@@ -157,11 +159,23 @@ void tankDrive(int left, int right, bool squared) {
     smartMotorSet(MOTOR_RIGHT_R, right);  // set right wheel(s)
 }
 
+void constantRadiusDrive(int power, int turnCC) {
+    // Map 'turnCC' to a value between -1 and 1 corresponding to the ratio of inner/outer wheel in the turn
+    float ratio = 1 - (2 * turnCC * turnCC / (float) (127 * 127));  // -1.0 <= ratio <= 1.0
+    int inner = lroundf(power * ratio);
+    int left = (turnCC >= 0) ? inner : power;
+    int right = (turnCC >= 0) ? power : inner;
+    smartMotorSet(MOTOR_LEFT_F, left);  // set left-front wheel(s)
+    smartMotorSet(MOTOR_LEFT_R, left);  // set left-rear wheel(s)
+    smartMotorSet(MOTOR_RIGHT_F, right);  // set right wheel(s)
+    smartMotorSet(MOTOR_RIGHT_R, right);  // set right wheel(s)
+}
+
 DriveMode chooseDriveMode() {
     static DriveMode s_controlMode = DRIVE_TANK;
     // button '8 down' cycles through control modes on button up
     if (hidController(1)->rightButtons.down.changed == 1) {
-        s_controlMode = (s_controlMode + 1) % 3;
+        s_controlMode = (s_controlMode + 1) % 4;
     }
     return s_controlMode;
 }
@@ -264,11 +278,21 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode c
     } else if (displayMode == ++n) {
         // 0123456789abcdef
         // ARCADE DRIVE
+        // CONSTANT RADIUS
         // CPU=20 IDLE=99 /
-        char* modeString = (controlMode == DRIVE_TANK) ? "TANK" : (controlMode == DRIVE_ARCADE) ? "ARCADE" : "ACCEL";
+        char* modeString;
+        if (controlMode == DRIVE_TANK) {
+            modeString = "TANK DRIVE";
+        } else if (controlMode == DRIVE_ARCADE) {
+            modeString = "ARCADE DRIVE";
+        } else if (controlMode == DRIVE_CONSTANT_RADIUS) {
+            modeString = "CONSTANT RADIUS";
+        } else {
+            modeString = "ACCELEROMETER";
+        }
         unsigned int millisSinceSlept = (unsigned int) (now - sleptAt);  // how much idle time did the cpu have?
         int cpuUsage = (SLEEP_MILLIS - millisSinceSlept) * 100 / SLEEP_MILLIS;
-        snprintf(line1, 17, "%s DRIVE", modeString);
+        snprintf(line1, 17, "%s", modeString);
         snprintf(line2, 17, "CPU=%-2d IDLE=%d", MIN(cpuUsage, 99), MIN(secSinceChange, 99));
 
     } else if (displayMode == ++n) {

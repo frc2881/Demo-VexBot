@@ -42,7 +42,7 @@ void trackingUpdate(unsigned long now);
 void trackingDriveToTarget();
 
 // Control
-void trackingSetSpeed(double linearSpeed, double rotationSpeed);
+void trackingSetDriveSpeed(short forward, short turn);
 void trackingSetDriveTarget(double x, double y, double a);
 void trackingSetDriveWaypoint(double x, double y, double a, double v, double w);
 
