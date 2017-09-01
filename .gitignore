@@ -1,3 +1,4 @@
-.idea
-bin
+.idea/
+bin/
 cmake-build-*/
+logs/

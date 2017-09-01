@@ -18,7 +18,7 @@ static bool _smartMotorEnabled;
 static SmartMotor _motorState[10];
 static unsigned long _motorLastUpdate;  // time in millis
 
-#define DEADBAND_393 12
+#define DEADBAND_393 15
 static float _linearize393[] = {0, 13.7, 17.1, 20.4, 23.7, 27.9, 32.7, 39.8, 50.3, 69.3, 127};
 
 void smartMotorInit() {

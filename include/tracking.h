@@ -9,7 +9,7 @@
 #define tracking_h
 
 #define AXLE_LENGTH 10.25   // inches
-#define WHEEL_RADIUS 4      // inches
+#define WHEEL_RADIUS 2      // inches
 #define RADIANS_PER_TICK (M_TWOPI/360)
 #define VELOCITY_SAMPLES 4
 

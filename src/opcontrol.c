@@ -88,6 +88,14 @@ void operatorControl() {
         // Update controller inputs
         hidUpdate(now);
 
+        // Reset position tracking?  (Useful during calibration.)
+        if (lcdInput->right.changed == -1) {
+            position.x = 0;
+            position.y = 0;
+            position.a = 0;
+            gyroReset(gyro);
+        }
+
         if (joystick->leftButtons.down.changed == -1) {
             // Turn around 180 degrees and reverse course
             trackingSetDriveWaypoint(position.x, position.y, position.a + M_PI, position.v, 0);
@@ -351,7 +359,7 @@ void lcdUpdate(const LcdInput *lcdInput, const Controller *joystick, DriveMode d
             // G+123 RPM+123.4
             double speed = abs(position.vLeft) > abs(position.vRight) ? position.vLeft : position.vRight;  // faster side
             snprintf(line1, 17, "A%+4.1f W%+4.1f", position.a * DEGREES_PER_RADIAN, position.w * DEGREES_PER_RADIAN);
-            snprintf(line2, 17, "G%+4d RPM%+4.1f", gyroGet(gyro), speed * (60 / (WHEEL_RADIUS * M_TWOPI)));  // convert to RPM
+            snprintf(line2, 17, "G%+4d RPM%+4.1f", gyroGet(gyro) % 360, speed * (60 / (WHEEL_RADIUS * M_TWOPI)));  // convert to RPM
         }
 
     } else if (_displayMode == ++n) {
